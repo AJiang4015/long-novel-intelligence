@@ -1517,6 +1517,7 @@ pytest -m integration tests/integration/test_api_neo4j.py -v
 - [ ] **Step 3: 写 db/neo4j.py**
 
 ```python
+import json
 from uuid import uuid4
 
 from neo4j import GraphDatabase
@@ -1546,10 +1547,12 @@ class Neo4jDB:
                 session.run(stmt).consume()
 
     def upsert_novel(self, novel_id: str, title: str, chapters: list[dict]) -> None:
+        # Neo4j 属性只允许原始类型/数组（不支持 map），list[dict] 需 JSON 序列化后存储
+        chapters_json = json.dumps(chapters, ensure_ascii=False)
         with self._driver.session() as session:
             session.run(
                 "MERGE (n:Novel {id: $novel_id}) SET n.title = $title, n.chapters = $chapters",
-                novel_id=novel_id, title=title, chapters=chapters,
+                novel_id=novel_id, title=title, chapters=chapters_json,
             ).consume()
 
     def upsert_graph(self, novel_id: str, merged) -> None:
@@ -1572,7 +1575,7 @@ class Neo4jDB:
                            r.confidence = $confidence, r.evidence = $evidence""",
                     novel_id=novel_id, source=source, target=target, type=rtype.value,
                     chunk_ids=sorted(rel.chunk_ids), weight=rel.weight,
-                    confidence=rel.confidence, evidence=rel.evidence,
+                    confidence=rel.confidence, evidence=json.dumps(rel.evidence, ensure_ascii=False),
                 ).consume()
 
     def get_novel(self, novel_id: str) -> dict | None:
@@ -1583,7 +1586,8 @@ class Neo4jDB:
             ).single()
             if record is None:
                 return None
-            return {"id": novel_id, "title": record["title"], "chapters": record["chapters"] or []}
+            chapters = json.loads(record["chapters"]) if record["chapters"] else []
+            return {"id": novel_id, "title": record["title"], "chapters": chapters}
 
     def search_characters(self, novel_id: str, q: str, limit: int = 10) -> list[dict]:
         with self._driver.session() as session:
@@ -1613,7 +1617,7 @@ class Neo4jDB:
         if center is None:
             return None
         with self._driver.session() as session:
-            records = session.run(
+            records = list(session.run(
                 """MATCH (c:Person {id: $character_id})
                    WHERE c.novel_id = $novel_id
                    MATCH (c)-[r:RELATES_TO]-(n:Person)
@@ -1623,7 +1627,7 @@ class Neo4jDB:
                           r.evidence AS r_evidence,
                           startNode(r).id AS r_from_id, endNode(r).id AS r_to_id""",
                 novel_id=novel_id, character_id=character_id,
-            )
+            ))
         novel = self.get_novel(novel_id)
         chapter_titles = {c["id"]: c["title"] for c in (novel["chapters"] if novel else [])}
         nodes = {character_id: {**center, "is_center": True}}
@@ -1638,7 +1642,10 @@ class Neo4jDB:
                     "is_center": False,
                 }
             evidence = []
-            for item in rec["r_evidence"] or []:
+            raw_evidence = rec["r_evidence"]
+            if raw_evidence:
+                raw_evidence = json.loads(raw_evidence)
+            for item in raw_evidence or []:
                 evidence.append({
                     "chunk_id": item["chunk_id"],
                     "chapter_id": item["chapter_id"],
