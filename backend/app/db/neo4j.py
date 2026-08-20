@@ -92,6 +92,17 @@ class Neo4jDB:
             ).single()
             return dict(record) if record else None
 
+    def get_character_by_id_global(self, character_id: str) -> dict | None:
+        """按 UUID 全局查找人物，返回 {id, novel_id, name, mention_count}。"""
+        with self._driver.session() as session:
+            record = session.run(
+                """MATCH (p:Person {id: $character_id})
+                   RETURN p.id AS id, p.novel_id AS novel_id, p.name AS name,
+                          p.mention_count AS mention_count""",
+                character_id=character_id,
+            ).single()
+            return dict(record) if record else None
+
     def get_subgraph(self, novel_id: str, character_id: str) -> dict | None:
         """1 跳子图（无向遍历，边保留存储方向）。novel_id + character_id 双层隔离。"""
         center = self.get_character(novel_id, character_id)

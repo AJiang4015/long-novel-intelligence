@@ -88,3 +88,96 @@ def test_upsert_and_subgraph(db, novel_id):
 def test_subgraph_unknown_character_returns_none(db, novel_id):
     db.upsert_novel(novel_id, "测试小说", [])
     assert db.get_subgraph(novel_id, "no-such-id") is None
+
+
+# ---------------------------------------------------------------- Task 10: API 层端到端
+
+import time
+
+from fastapi.testclient import TestClient
+
+from app.main import create_app
+from app.schemas.llm import ExtractionResult
+
+
+class FakeLLMClient:
+    """固定返回两组关系（两个 chunk 都确认 love/enmity），验证 weight=2 贯穿全链路。"""
+
+    def extract_chunk(self, text: str) -> ExtractionResult:
+        return ExtractionResult.model_validate({
+            "characters": [{"name": "贾宝玉"}, {"name": "林黛玉"}, {"name": "王熙凤"}],
+            "relationships": [
+                {"source": "贾宝玉", "target": "林黛玉", "type": "love", "confidence": 0.9},
+                {"source": "王熙凤", "target": "贾宝玉", "type": "enmity", "confidence": 0.8},
+            ],
+        })
+
+
+@pytest.fixture(scope="module")
+def client(db):
+    app = create_app()
+    with TestClient(app) as client:
+        app.state.llm_client = FakeLLMClient()  # 替换真实 LLM，其余（db/job_store）走 lifespan
+        yield client
+
+
+@pytest.fixture()
+def uploaded(client):
+    from tests.epub_factory import build_epub
+
+    epub_bytes = build_epub(["贾宝玉和林黛玉在大观园交谈。", "王熙凤对贾宝玉发怒。"])
+    resp = client.post("/api/novels", files={"file": ("flow.epub", epub_bytes, "application/epub+zip")})
+    assert resp.status_code == 200
+    data = resp.json()
+    yield data  # {"novel_id", "job_id"}
+    client.app.state.db.delete_novel(data["novel_id"])
+
+
+def _wait_job(client, job_id, timeout=15):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in ("completed", "completed_with_errors", "failed"):
+            return job
+        time.sleep(0.2)
+    raise AssertionError("job 超时未结束")
+
+
+def test_upload_to_graph_full_flow(client, uploaded):
+    novel_id, job_id = uploaded["novel_id"], uploaded["job_id"]
+
+    job = _wait_job(client, job_id)
+    assert job["status"] == "completed"
+    assert job["stats"]["persons"] == 3
+    assert job["stats"]["relationships"] == 2
+
+    novel = client.get(f"/api/novels/{novel_id}").json()
+    assert [c["id"] for c in novel["chapters"]] == [1, 2]
+
+    cands = client.get(f"/api/novels/{novel_id}/characters", params={"q": "贾"}).json()
+    jia = next(c for c in cands if c["name"] == "贾宝玉")
+
+    graph = client.get(f"/api/characters/{jia['id']}/graph").json()
+    assert {n["name"] for n in graph["nodes"]} == {"贾宝玉", "林黛玉", "王熙凤"}
+    love_edge = next(e for e in graph["edges"] if e["type"] == "love")
+    assert love_edge["weight"] == 2            # 两个 chunk 都确认 → weight 语义贯穿全链路
+    assert love_edge["confidence"] == pytest.approx(0.9)
+    assert love_edge["evidence"][0]["chapter_title"] == "第1章"
+
+
+def test_upload_rejects_non_epub(client):
+    resp = client.post("/api/novels", files={"file": ("a.txt", b"hello", "text/plain")})
+    assert resp.status_code == 400
+
+
+def test_unknown_character_404(client, uploaded):
+    resp = client.get("/api/characters/no-such-id/graph")
+    assert resp.status_code == 404
+
+
+def test_unknown_job_404(client):
+    assert client.get("/api/jobs/no-such-job").status_code == 404
+
+
+def test_health_ok(client):
+    assert client.get("/api/health").json()["status"] == "ok"
