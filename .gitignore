@@ -10,3 +10,5 @@ dist/
 .pip-tmp/
 backend/.venv/
 backend/.deps/
+*.egg-info/
+pytest-cache-files*/
