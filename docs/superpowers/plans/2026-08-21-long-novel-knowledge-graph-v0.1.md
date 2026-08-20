@@ -488,12 +488,16 @@ git commit -m "feat: LLM 输出契约（枚举/长度/置信度校验/self-loop 
 
 - [ ] **Step 1: 写 epub_factory.py（测试 helper）**
 
+> 环境适配：本沙箱环境会锁定进程创建的临时目录（tmp_path/basetemp 不可用），故 `build_epub` 直接用 BytesIO 返回字节，不落盘；空章节不生成标题内容（保证剥离 HTML 后 text 为空，用于空章节跳过测试）。
+
 ```python
+import io
+
 from ebooklib import epub
 
 
-def build_epub(path, chapters: list[str]) -> bytes:
-    """构造一个章节为纯文本的测试 EPUB，返回文件字节。"""
+def build_epub(chapters: list[str]) -> bytes:
+    """构造一个章节为纯文本的测试 EPUB，直接返回文件字节（不落盘）。"""
     book = epub.EpubBook()
     book.set_identifier("test-001")
     book.set_title("测试小说")
@@ -501,15 +505,17 @@ def build_epub(path, chapters: list[str]) -> bytes:
     spine = []
     for i, text in enumerate(chapters, start=1):
         c = epub.EpubHtml(title=f"第{i}章", file_name=f"chap_{i}.xhtml", lang="zh")
-        c.content = f"<h1>第{i}章</h1><p>{text}</p>"
+        # 空章节不生成标题/段落内容，确保剥离 HTML 后 text 为空（用于测试空章节跳过）
+        c.content = f"<h1>第{i}章</h1><p>{text}</p>" if text else "<p></p>"
         book.add_item(c)
         spine.append(c)
     book.toc = spine
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
     book.spine = spine
-    epub.write_epub(str(path), book)
-    return path.read_bytes()
+    buf = io.BytesIO()
+    epub.write_epub(buf, book)
+    return buf.getvalue()
 ```
 
 - [ ] **Step 2: 写失败测试（test_chunker.py 第一部分）**
@@ -519,8 +525,8 @@ from app.pipeline.epub_reader import read_epub
 from tests.epub_factory import build_epub
 
 
-def test_read_epub_extracts_chapters_in_spine_order(tmp_path):
-    epub_bytes = build_epub(tmp_path / "test.epub", ["第一段内容。", "第二段内容。"])
+def test_read_epub_extracts_chapters_in_spine_order():
+    epub_bytes = build_epub(["第一段内容。", "第二段内容。"])
     chapters = read_epub(epub_bytes)
     assert [c.chapter_title for c in chapters] == ["第1章", "第2章"]
     assert chapters[0].chapter_id == 1
@@ -530,8 +536,8 @@ def test_read_epub_extracts_chapters_in_spine_order(tmp_path):
     assert "<h1>" not in chapters[0].text  # HTML 标签已剥离
 
 
-def test_read_epub_skips_empty_chapter(tmp_path):
-    epub_bytes = build_epub(tmp_path / "test.epub", ["", "有内容的章节。"])
+def test_read_epub_skips_empty_chapter():
+    epub_bytes = build_epub(["", "有内容的章节。"])
     chapters = read_epub(epub_bytes)
     assert len(chapters) == 1
     assert chapters[0].chapter_id == 1
@@ -586,7 +592,7 @@ def read_epub(epub_bytes: bytes) -> list[Chapter]:
         text = _strip_html(item.get_content().decode("utf-8", errors="ignore"))
         if not text:
             continue
-        title = (item.get_title() or "").strip() or f"第{len(chapters) + 1}章"
+        title = (getattr(item, "title", "") or "").strip() or f"第{len(chapters) + 1}章"
         chapters.append(Chapter(chapter_id=len(chapters) + 1, chapter_title=title, text=text))
     return chapters
 ```
@@ -776,7 +782,7 @@ def test_same_chunk_duplicate_counts_once():
         {"source": "贾宝玉", "target": "林黛玉", "type": "love", "confidence": 0.95},
         {"source": "贾宝玉", "target": "林黛玉", "type": "love", "confidence": 0.90},
     ])
-    graph = merge_extractions("novel-1", [(chunk, result)])
+    graph = merge_extractions([(chunk, result)])
     rel = graph.relationships[("贾宝玉", "林黛玉", RelationshipType.love)]
     assert rel.weight == 1
     assert rel.chunk_ids == {1}
@@ -789,7 +795,7 @@ def test_weight_counts_distinct_chunks():
         extraction([{"source": "贾宝玉", "target": "林黛玉", "type": "love", "confidence": c}])
         for c in (0.95, 0.90, 0.70)
     ]
-    graph = merge_extractions("novel-1", list(zip(chunks, results)))
+    graph = merge_extractions(list(zip(chunks, results)))
     rel = graph.relationships[("贾宝玉", "林黛玉", RelationshipType.love)]
     assert rel.weight == 3
     assert rel.chunk_ids == {1, 7, 12}
@@ -802,7 +808,7 @@ def test_evidence_first_five_by_discovery_order():
         extraction([{"source": "A", "target": "B", "type": "other", "confidence": 0.8}])
         for _ in chunks
     ]
-    graph = merge_extractions("novel-1", list(zip(chunks, results)))
+    graph = merge_extractions(list(zip(chunks, results)))
     rel = graph.relationships[("A", "B", RelationshipType.other)]
     assert rel.weight == 8
     assert [e["chunk_id"] for e in rel.evidence] == [1, 2, 3, 4, 5]
@@ -817,7 +823,7 @@ def test_mention_count_is_distinct_chunks():
         characters=[{"name": "贾宝玉"}],
     )
     r2 = extraction([], characters=[{"name": "贾宝玉"}, {"name": "林黛玉"}])
-    graph = merge_extractions("novel-1", [(chunk1, r1), (chunk2, r2)])
+    graph = merge_extractions([(chunk1, r1), (chunk2, r2)])
     assert graph.persons["贾宝玉"].mention_count == 2
     assert graph.persons["贾宝玉"].chapters == {1, 2}
     assert graph.persons["林黛玉"].mention_count == 1
@@ -828,7 +834,7 @@ def test_merger_defensively_skips_self_loop():
     result = ExtractionResult.model_construct(characters=[], relationships=[
         Relationship(source="A", target="A", type=RelationshipType.other, confidence=0.5),
     ])
-    graph = merge_extractions("novel-1", [(chunk, result)])
+    graph = merge_extractions([(chunk, result)])
     assert graph.relationships == {}
 
 
@@ -838,7 +844,7 @@ def test_merge_is_deterministic_regardless_of_input_order():
         extraction([{"source": "A", "target": "B", "type": "other", "confidence": 0.8}])
         for _ in chunks
     ]
-    graph = merge_extractions("novel-1", list(zip(chunks, results)))
+    graph = merge_extractions(list(zip(chunks, results)))
     rel = graph.relationships[("A", "B", RelationshipType.other)]
     assert [e["chunk_id"] for e in rel.evidence] == [1, 2]  # 按 chunk_id 排序后首现顺序
 ```
@@ -911,8 +917,8 @@ def merge_extractions(extractions: list[tuple[Chunk, ExtractionResult]]) -> Merg
         for r in result.relationships:
             if r.source == r.target:
                 continue  # 防御：self-loop 直接丢弃
-            seen_names.add(r.source)
-            seen_names.add(r.target)
+            # 注：mention_count 只统计 characters 字段（关系端点不计入），
+            # 与 test_mention_count_is_distinct_chunks 断言一致
             rel = graph.relationships.setdefault(
                 (r.source, r.target, r.type),
                 RelAgg(source=r.source, target=r.target, type=r.type),
@@ -1733,10 +1739,10 @@ def client(db):
 
 
 @pytest.fixture()
-def uploaded(client, tmp_path):
+def uploaded(client):
     from tests.epub_factory import build_epub
 
-    epub_bytes = build_epub(tmp_path / "flow.epub", ["贾宝玉和林黛玉在大观园交谈。", "王熙凤对贾宝玉发怒。"])
+    epub_bytes = build_epub(["贾宝玉和林黛玉在大观园交谈。", "王熙凤对贾宝玉发怒。"])
     resp = client.post("/api/novels", files={"file": ("flow.epub", epub_bytes, "application/epub+zip")})
     assert resp.status_code == 200
     data = resp.json()
@@ -2273,12 +2279,13 @@ export function toForceGraph(g: GraphResponse): { nodes: ForceNode[]; links: For
 ```ts
 import type { CharacterCandidate, GraphResponse, JobResponse, NovelResponse } from "./types";
 
-async function handle<T>(resp: Response): Promise<T> {
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => null);
-    throw new Error((body && body.detail) || `HTTP ${resp.status}`);
+async function handle<T>(resp: Response | Promise<Response>): Promise<T> {
+  const r = await resp;
+  if (!r.ok) {
+    const body = await r.json().catch(() => null);
+    throw new Error((body && body.detail) || `HTTP ${r.status}`);
   }
-  return resp.json() as Promise<T>;
+  return r.json() as Promise<T>;
 }
 
 export async function uploadNovel(file: File): Promise<{ novel_id: string; job_id: string }> {
