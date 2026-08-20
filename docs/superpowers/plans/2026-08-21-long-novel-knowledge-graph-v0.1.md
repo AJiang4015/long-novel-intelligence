@@ -1982,6 +1982,20 @@ async def create_novel(request: Request, background_tasks: BackgroundTasks,
         request.app.state.settings, db, job_store, request.app.state.llm_client,
     )
     return NovelCreateResponse(novel_id=novel_id, job_id=job_id)
+
+
+@router.get("/{novel_id}", response_model=NovelResponse)
+def get_novel(novel_id: str, request: Request) -> NovelResponse:
+    db: Neo4jDB = request.app.state.db
+    novel = db.get_novel(novel_id)
+    if novel is None:
+        raise HTTPException(status_code=404, detail="小说不存在")
+    return NovelResponse(
+        id=novel_id,
+        title=novel["title"],
+        chapters=novel["chapters"],
+        stats=db.count_stats(novel_id),
+    )
 ```
 
 - [ ] **Step 5: 写 api/jobs.py / api/characters.py / api/health.py**
@@ -2013,7 +2027,7 @@ router = APIRouter(prefix="/api", tags=["characters"])
 
 
 @router.get("/novels/{novel_id}/characters", response_model=list[CharacterCandidate])
-def search_characters(novel_id: str, q: str = "", request: Request) -> list[CharacterCandidate]:
+def search_characters(request: Request, novel_id: str, q: str = "") -> list[CharacterCandidate]:
     db = request.app.state.db
     if db.get_novel(novel_id) is None:
         raise HTTPException(status_code=404, detail="小说不存在")
