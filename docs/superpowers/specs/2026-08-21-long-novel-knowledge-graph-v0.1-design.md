@@ -319,14 +319,16 @@ type GraphLink = {
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `LLM_BASE_URL` | 必填 | OpenAI 兼容 API 地址 |
-| `LLM_API_KEY` | 必填 | API Key（缺失则启动时报错退出） |
-| `LLM_MODEL` | 必填 | 模型名 |
+| `BAILIAN_API_KEY` | 必填 | 阿里百炼 API Key（缺失则启动时报错退出） |
+| `BAILIAN_URL` | 必填 | 百炼 OpenAI 兼容地址（如 `https://dashscope.aliyuncs.com/compatible-mode/v1`） |
+| `BAILIAN_MODEL` | qwen3.7-max-2026-05-17 | 模型名（可覆盖） |
 | `LLM_CONCURRENCY` | 4 | LLM 并发数（可按模型限流调整 4/8/16） |
 | `CHUNK_SIZE` | 4000 | 切块字数 |
 | `CHUNK_OVERLAP` | 400 | 切块重叠字数 |
 | `NEO4J_URI` | bolt://localhost:7687 | Neo4j 地址 |
 | `NEO4J_USER` / `NEO4J_PASSWORD` | neo4j / 必改 | Neo4j 凭据 |
+
+> 说明：V0.1 原配置 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` 已改为阿里百炼专用 `BAILIAN_*`（2026-08-21 修订）；`llm_client` 请求携带 `Authorization: Bearer <BAILIAN_API_KEY>`。
 
 ## 8. 错误处理
 

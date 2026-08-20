@@ -17,13 +17,13 @@ async def lifespan(app: FastAPI):
         settings = get_settings()
     except ValidationError as exc:
         raise RuntimeError(
-            "配置缺失：请检查 .env（LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / NEO4J_PASSWORD 必填）"
+            "配置缺失：请检查 .env（BAILIAN_API_KEY / BAILIAN_URL / NEO4J_PASSWORD 必填）"
         ) from exc
     app.state.settings = settings
     app.state.job_store = JobStore()
     app.state.db = Neo4jDB(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
     app.state.llm_client = LLMClient(
-        base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model,
+        base_url=settings.bailian_url, api_key=settings.bailian_api_key, model=settings.bailian_model,
     )
     yield
     app.state.db.close()

@@ -4,7 +4,8 @@
 
 ## 启动
 
-1. `cp .env.example .env`，填写 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`；如修改了 Neo4j 密码需同步 `.env`
+1. `cp .env.example .env`，填写 `BAILIAN_API_KEY`（阿里百炼 API Key）；如修改了 Neo4j 密码需同步 `.env`
+   - LLM 使用阿里百炼：`BAILIAN_URL`（OpenAI 兼容地址，默认 `https://dashscope.aliyuncs.com/compatible-mode/v1`）、`BAILIAN_MODEL`（默认 `qwen3.7-max-2026-05-17`）
 2. 启动 Neo4j（本机 Docker：`docker compose up -d neo4j`；或使用远程实例，改 `.env` 的 `NEO4J_URI`）
 3. 后端：`cd backend && pip install -e ".[dev]" && uvicorn app.main:app --reload --port 8000`
    - 若本机 pip 不可用（如沙箱环境），依赖可手动解包到 `backend/.deps`，运行前设置 `$env:PYTHONPATH='backend\.deps'`

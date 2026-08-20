@@ -124,9 +124,10 @@ volumes:
 - [ ] **Step 2: 写 .env.example**
 
 ```
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_API_KEY=sk-xxxx
-LLM_MODEL=deepseek-chat
+# 阿里百炼（DashScope OpenAI 兼容模式）
+BAILIAN_API_KEY=sk-xxxx
+BAILIAN_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+BAILIAN_MODEL=qwen3.7-max-2026-05-17
 LLM_CONCURRENCY=4
 CHUNK_SIZE=4000
 CHUNK_OVERLAP=400
@@ -201,7 +202,7 @@ def pytest_collection_modifyitems(config, items):
 
 ## 启动
 
-1. `cp .env.example .env`，填写 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`；如修改了 Neo4j 密码需同步 `.env`
+1. `cp .env.example .env`，填写 `BAILIAN_API_KEY`（阿里百炼 API Key）；如修改了 Neo4j 密码需同步 `.env`
 2. `docker compose up -d neo4j`
 3. 后端：`cd backend && pip install -e ".[dev]" && uvicorn app.main:app --reload --port 8000`
 4. 前端：`cd frontend && npm install && npm run dev`（访问 http://localhost:5173）
@@ -254,7 +255,7 @@ git commit -m "chore: V0.1 工程骨架（docker-compose/配置/后端依赖/测
 
 **Interfaces:**
 - Consumes: 无
-- Produces: `get_settings() -> Settings`（lru_cache 单例）；`Settings` 字段：`llm_base_url: str`、`llm_api_key: str`、`llm_model: str`、`llm_concurrency: int = 4`、`chunk_size: int = 4000`、`chunk_overlap: int = 400`、`neo4j_uri: str = "bolt://localhost:7687"`、`neo4j_user: str = "neo4j"`、`neo4j_password: str`。缺失必填项（LLM_BASE_URL/LLM_API_KEY/LLM_MODEL/NEO4J_PASSWORD）时 `Settings()` 抛 `pydantic.ValidationError`
+- Produces: `get_settings() -> Settings`（lru_cache 单例）；`Settings` 字段：`bailian_api_key: str`、`bailian_url: str`、`bailian_model: str = "qwen3.7-max-2026-05-17"`、`llm_concurrency: int = 4`、`chunk_size: int = 4000`、`chunk_overlap: int = 400`、`neo4j_uri: str = "bolt://localhost:7687"`、`neo4j_user: str = "neo4j"`、`neo4j_password: str`。缺失必填项（BAILIAN_API_KEY/BAILIAN_URL/NEO4J_PASSWORD）时 `Settings()` 抛 `pydantic.ValidationError`
 
 - [ ] **Step 1: 写失败测试**
 
@@ -266,22 +267,21 @@ from app.config import Settings
 
 
 def test_settings_reads_env(monkeypatch):
-    monkeypatch.setenv("LLM_BASE_URL", "https://example.com/v1")
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
-    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.setenv("BAILIAN_API_KEY", "sk-test")
+    monkeypatch.setenv("BAILIAN_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
     s = Settings(_env_file=None)
-    assert s.llm_base_url == "https://example.com/v1"
-    assert s.llm_model == "test-model"
+    assert s.bailian_api_key == "sk-test"
+    assert s.bailian_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert s.bailian_model == "qwen3.7-max-2026-05-17"  # 默认模型
     assert s.llm_concurrency == 4      # 默认值
     assert s.chunk_size == 4000        # 默认值
     assert s.neo4j_uri == "bolt://localhost:7687"
 
 
-def test_settings_requires_llm_key(monkeypatch):
-    monkeypatch.delenv("LLM_API_KEY", raising=False)
-    monkeypatch.setenv("LLM_BASE_URL", "https://example.com/v1")
-    monkeypatch.setenv("LLM_MODEL", "test-model")
+def test_settings_requires_bailian_key(monkeypatch):
+    monkeypatch.delenv("BAILIAN_API_KEY", raising=False)
+    monkeypatch.setenv("BAILIAN_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
@@ -307,9 +307,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    llm_base_url: str
-    llm_api_key: str
-    llm_model: str
+    # 阿里百炼（DashScope OpenAI 兼容模式）
+    bailian_api_key: str          # env BAILIAN_API_KEY，必填
+    bailian_url: str              # env BAILIAN_URL，必填，完整兼容地址
+    bailian_model: str = "qwen3.7-max-2026-05-17"  # env BAILIAN_MODEL 可覆盖
     llm_concurrency: int = 4
     chunk_size: int = 4000
     chunk_overlap: int = 400
@@ -2102,13 +2103,13 @@ async def lifespan(app: FastAPI):
         settings = get_settings()
     except ValidationError as exc:
         raise RuntimeError(
-            "配置缺失：请检查 .env（LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / NEO4J_PASSWORD 必填）"
+            "配置缺失：请检查 .env（BAILIAN_API_KEY / BAILIAN_URL / NEO4J_PASSWORD 必填）"
         ) from exc
     app.state.settings = settings
     app.state.job_store = JobStore()
     app.state.db = Neo4jDB(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
     app.state.llm_client = LLMClient(
-        base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model,
+        base_url=settings.bailian_url, api_key=settings.bailian_api_key, model=settings.bailian_model,
     )
     yield
     app.state.db.close()
@@ -2773,7 +2774,7 @@ cd E:\CodeField\Long-Novel-Intelligence
 docker compose up -d neo4j
 # 后端
 cd backend
-cp ../.env.example .env   # 填入真实 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
+cp ../.env.example .env   # 填入真实 BAILIAN_API_KEY
 uvicorn app.main:app --reload --port 8000
 # 前端（另开终端）
 cd frontend

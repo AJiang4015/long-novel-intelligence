@@ -79,9 +79,11 @@ class FakeHttpClient:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = 0
+        self.last_headers = None
 
-    def post(self, url, json=None):
+    def post(self, url, json=None, headers=None):
         self.calls += 1
+        self.last_headers = headers
         return self.responses.pop(0)
 
 
@@ -108,6 +110,14 @@ def test_extract_chunk_parses_valid_json():
     })])
     result = client.extract_chunk("任意文本")
     assert isinstance(result, ExtractionResult)
+
+
+def test_extract_chunk_sends_bearer_auth_header():
+    client = make_client([fake_response(200, {
+        "choices": [{"message": {"content": '{"characters": [], "relationships": []}'}}],
+    })])
+    client.extract_chunk("任意文本")
+    assert client._client.last_headers == {"Authorization": "Bearer k"}
 
 
 def test_extract_chunk_malformed_json_is_validation_error():

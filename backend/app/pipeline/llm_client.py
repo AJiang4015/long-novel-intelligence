@@ -38,6 +38,7 @@ class LLMClient:
     def extract_chunk(self, text: str) -> ExtractionResult:
         response = self._client.post(
             f"{self._base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self._api_key}"},
             json={
                 "model": self._model,
                 "messages": [
