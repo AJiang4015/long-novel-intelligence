@@ -12,3 +12,5 @@ backend/.venv/
 backend/.deps/
 *.egg-info/
 pytest-cache-files*/
+.pytest-tmp/
+.npm-cache/
