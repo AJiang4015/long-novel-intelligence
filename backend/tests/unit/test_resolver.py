@@ -130,3 +130,52 @@ def test_relationship_endpoints_resolved():
     rel = out.relationships[0]
     assert rel.source == "傩送"
     assert rel.target == "翠翠"
+
+
+# ═══════════ 同 chunk 共现召回（V0.2 第二步第 1 项）═══════════
+
+def test_cooccurrence_recalls_zero_overlap_alias_in_same_chunk():
+    """零共享字但同 chunk 共现（傩送 先确认，二老 后出现）→ 共现召回成功并经 judge 合并。"""
+    j = _Judge({"二老": "傩送"})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1, text="傩送撑船"), extraction(["傩送"]))  # 确立 canonical
+    out, _ = r.resolve(make_chunk(2, text="二老和傩送同在一处"), extraction(["傩送", "二老"]))
+    assert [c.name for c in out.characters] == ["傩送", "傩送"]
+    assert r.canonical_aliases["傩送"] == ["二老"]
+    assert j.calls == 1
+
+
+def test_cooccurrence_candidate_priority_over_char_overlap():
+    """同 chunk 共现候选优先级高于普通字符重合候选（共现 傩送 排在字符重合 大老 之前）。"""
+    seen: dict = {}
+
+    def recorder(text, pending):
+        seen["cands"] = [[c.canonical for c in p.candidates] for p in pending]
+        return AliasJudgeResult.model_validate(
+            {"resolutions": [{"mention": p.mention, "resolves_to": None} for p in pending]})
+
+    r = EntityResolver(judge=recorder)
+    r.resolve(make_chunk(1), extraction(["傩送", "大老"]))
+    r.resolve(make_chunk(2, text="二老和傩送同在一处"), extraction(["傩送", "二老"]))
+    # chunk2：傩送 已知先确认 → 二老 候选 = [傩送(共现优先), 大老(字符重合 老)]
+    assert seen["cands"] == [["傩送", "大老"]]
+
+
+def test_no_cooccurrence_across_chunks_requires_llm_judgment():
+    """不同 chunk 且无字符重合 → 不自动合并；仍走候选 + LLM 判定（判 null 则独立 canonical）。"""
+    j = _Judge({"二老": None})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1), extraction(["傩送"]))
+    out, _ = r.resolve(make_chunk(2), extraction(["二老"]))
+    assert j.calls == 1  # 走了一次 LLM 判定（零重叠候选仍在 top-k 内）
+    assert out.characters[0].name == "二老"  # 判 null → 独立 canonical，不自动合并
+
+
+def test_cooccurrence_new_canonical_also_feeds_later_names():
+    """同 chunk 内新确立的 canonical 也参与后续共现召回（首现规则不受影响）。"""
+    j = _Judge({"二老": "傩送"})
+    r = EntityResolver(judge=j)
+    # chunk1：空 index，傩送 无候选 → 新 canonical；二老 与它同 chunk 共现 → 召回成功
+    out, _ = r.resolve(make_chunk(1, text="二老和傩送同在一处"), extraction(["傩送", "二老"]))
+    assert [c.name for c in out.characters] == ["傩送", "傩送"]
+    assert r.canonical_aliases["傩送"] == ["二老"]

@@ -29,11 +29,12 @@ class EntityResolver:
         pending: list[PendingMention] = []
         resolved_chars: list = []
         resolved_rels: list = []
+        confirmed: set[str] = set()  # 本 chunk 已确认的 canonical（同 chunk 共现召回源）
 
         def do_name(name: str) -> str:
-            canonical, needs_judge = self._resolve_name(name)
+            canonical, needs_judge = self._resolve_name(name, confirmed)
             if needs_judge:
-                pending.append(self._pending_for(name))
+                pending.append(self._pending_for(name, confirmed))
                 return name  # 判定后再替换
             return canonical
 
@@ -73,18 +74,43 @@ class EntityResolver:
         return resolved, failed
 
     # ---- 内部 ----
-    def _resolve_name(self, name: str) -> tuple[str, bool]:
+    def _resolve_name(self, name: str, confirmed: set[str]) -> tuple[str, bool]:
         if name in self.known:
-            return self.known[name], False
-        candidates = self._recall(name)
+            canonical = self.known[name]
+            confirmed.add(canonical)  # 已确认 → 成为后续同名 chunk 内共现候选源
+            return canonical, False
+        candidates = self._recall(name, confirmed)
         if not candidates:
             self._register(name)
+            confirmed.add(name)
             return name, False
         return name, True  # 进 pending，本 chunk 末统一判定
 
-    def _recall(self, mention: str) -> list[AliasCandidate]:
-        scored: list[tuple[int, str, set[str]]] = []
+    def _recall(self, mention: str, confirmed: set[str]) -> list[AliasCandidate]:
+        """候选召回：同 chunk 共现（强，优先） + 字符重合/子串（保持原有）。
+
+        - confirmed 中的 canonical 与 mention 同段出现 → 高优先候选（解决 二老↔傩送 等零共享字称谓）；
+        - 其余走原有 子串包含优先 + 共享字符数 排序；
+        - 合计截断 RECALL_TOP_K；共现候选先去重（不重复出现在字符候选里）。
+        """
+        out: list[AliasCandidate] = []
+        seen: set[str] = set()
+
+        # 1) 同 chunk 共现候选（强，优先）
+        for canonical in confirmed:
+            if canonical == mention or canonical not in self._index or canonical in seen:
+                continue
+            seen.add(canonical)
+            out.append(AliasCandidate(
+                canonical=canonical,
+                matched_names=sorted(self._index[canonical]),
+            ))
+
+        # 2) 原有字符重合 + 子串候选（排除共现重复）
+        scored: list[tuple[int, int, str]] = []
         for canonical, names in self._index.items():
+            if canonical in seen:
+                continue
             hit = None
             for n in names:
                 if mention in n or n in mention:      # 子串包含优先
@@ -93,16 +119,16 @@ class EntityResolver:
             overlap = max(_overlap(mention, n) for n in names) if names else 0
             scored.append((1 if hit else 0, overlap, canonical))
         scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
-        out = []
-        for _prio, _ov, canonical in scored[:RECALL_TOP_K]:
+        for _prio, _ov, canonical in scored[: max(0, RECALL_TOP_K - len(out))]:
+            seen.add(canonical)
             out.append(AliasCandidate(
                 canonical=canonical,
                 matched_names=sorted(self._index[canonical]),
             ))
-        return out
+        return out[:RECALL_TOP_K]
 
-    def _pending_for(self, mention: str) -> PendingMention:
-        return PendingMention(mention=mention, candidates=self._recall(mention))
+    def _pending_for(self, mention: str, confirmed: set[str]) -> PendingMention:
+        return PendingMention(mention=mention, candidates=self._recall(mention, confirmed))
 
     def _apply_judge(self, judge_result: AliasJudgeResult, pending: list[PendingMention]):
         valid_canonicals = {c.canonical for p in pending for c in p.candidates}
