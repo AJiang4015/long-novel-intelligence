@@ -1,187 +1,199 @@
-# problem.md — 项目长期问题知识库
+# PROBLEM.md — 问题知识库（症状 → 根因 → 做法 → 预防）
 
-> 记录 Bug / 根因 / 解决方案 / 验证 / 工程事故 / 环境问题 / 限制与经验。
-> 状态：`resolved`（已解决）/ `investigating`（未完全解决）。
-> 维护规则见 `AGENTS.md` §10。不删除历史记录。
-
----
-
-## A. 工程事故
-
-### A1. 集成测试全库删除 Novel → 孤儿数据事故
-
-- **Status**: `resolved`
-- **Problem**: `test_list_novels_empty` 执行 `MATCH (n:Novel) DELETE n`，一次集成测试运行清空全部真实 Novel 节点，留下 329 孤儿 Person + 577 条 RELATES_TO（novel_id 指向不存在的 Novel）。
-- **Root Cause**: 测试为断言「空列表」而无条件删除全库 Novel；且只删 Novel、不删 Person/边。
-- **Why**: 违反数据隔离——测试不得做无范围 destructive 操作。
-- **Solution**: 该测试改为**非破坏性结构断言**（只验证列表结构）；删除操作一律走 `db.delete_novel(novel_id)` 按 id 精确清理。规则写入 `TESTING.md` §1/§8。
-- **Validation**: 集成测试全绿；新实例测试后 `novels=0 persons=0`。
-- **Trade-offs**: 失去「空列表」精确断言，由 sorted/结构用例覆盖。
-- **Git commit**: `a534116`（含独立实例迁移）。
-
-### A2. 共享 Neo4j 与医疗图谱同库风险
-
-- **Status**: `resolved`
-- **Problem**: 小说项目连接 VM 上共享 Neo4j（python-project 栈，含约 4.8 万医疗图谱节点：疾病/药品/食物/检查项目/疾病症状/治疗方法/药品商），任何全局操作都可能波及他人数据。
-- **Root Cause**: VM `python-project` docker-compose 栈（neo4j:5.26.0）与小说项目共用 7474/7687。
-- **Why**: 跨业务共享数据库缺乏隔离。
-- **Solution**: 停用 python-project 栈（`docker compose stop` + `docker update --restart=no` ×6）；新建独立 `novel-project` 实例（`novel-neo4j`，端口 7474/7687，卷 `novel_neo4j_data`，密码 12345678）。后端 `.env` 连接不变（`bolt://192.168.127.101:7687`）。
-- **Validation**: 新实例空库、Windows 可达、认证 OK、集成测试全绿。
-- **Trade-offs**: 旧医疗栈恢复需手动（端口冲突）。
-- **Git commit**: `a534116`。
-
-### A3. python-project 容器自启动
-
-- **Status**: `resolved`
-- **Problem**: python-project 6 个容器 `restart=always`，Docker 守护进程重启即拉起（无视手动 stop）。
-- **Root Cause**: compose 默认/显式 `restart: always`。
-- **Solution**: `docker update --restart=no` ×6 容器，全部 `status=exited`。
-- **Validation**: 重启策略确认 `restart=no`。
-- **Git commit**: VM 操作（无仓库 commit）。
+> 用途：Agent 遇到类似现象时，能快速判断「先查什么、不做什么、怎么处理」。
+> 维护规则与记录标准见 `AGENTS.md` §10（只记高价值问题，不记 typo/一眼可见错误）。
+> 状态：✅ resolved ｜ 🔍 investigating。
 
 ---
 
-## B. Bug
+## 0. Do / Don't（高频踩坑速查）
 
-### B1. llm_client 缺失 Authorization 头
+### Do
 
-- **Status**: `resolved`
-- **Problem**: 真实 LLM 调用必 401（保存了 key 但 POST 未带 `Authorization: Bearer`）。
-- **Root Cause**: 计划代码缺陷——`_api_key` 未被使用。
-- **Solution**: POST 补 `headers={"Authorization": f"Bearer {self._api_key}"}`；加单测锁死。
-- **Validation**: `test_extract_chunk_sends_bearer_auth_header`；全量测试绿。
-- **Git commit**: `8c25836`。
+- 删除数据一律 `db.delete_novel(novel_id)`（按 id 精确；删除前 dry-run 列目标）
+- 每个测试用例创建独立 `novel_id`，结束后只清理自己的
+- `EntityResolver` 一次 ingest 一个实例（`known`/mention index 整本持续）
+- 长任务脚本用 `python -u`（无缓冲）+ 后台任务方式运行
+- 真实评估前记录 Environment Baseline（commit/model/chunk/concurrency/novel_id/Neo4j 版本）
+- 修改 `resolver.py` 后跑 `test_resolver.py` 回归清单（TESTING.md §8）
+- LLM 报错先看诊断日志 `[llm] stage=... status=... code=...`（区分 Arrearage/限流/validation）
+- 改 `.env` 后必须重启后端（settings 进程内缓存）
 
-### B2. ebooklib 0.20 `get_title` 不存在
+### Don't
 
-- **Status**: `resolved`
-- **Problem**: `EpubHtml.get_title()` AttributeError（0.20 无该方法）。
-- **Root Cause**: ebooklib 0.20 API 变化（title 为实例属性）。
-- **Solution**: `getattr(item, "title", "")`。
-- **Validation**: epub 解析测试通过。
-- **Git commit**: `f2b03c6`。
-
-### B3. Neo4j 属性不支持 map → JSON 序列化
-
-- **Status**: `resolved`
-- **Problem**: `chapters`/`evidence` 为 list[dict]，作为属性存储报错。
-- **Root Cause**: Neo4j 属性值不允许 map（仅原始类型/数组）。
-- **Solution**: `json.dumps` 存储、读取 `json.loads` 还原（upsert_novel/get_novel/upsert_graph/get_subgraph）。
-- **Validation**: 集成测试通过。
-- **Git commit**: `dcf6023` 系。
-
-### B4. `get_subgraph` 结果在会话外迭代 → ResultConsumedError
-
-- **Status**: `resolved`
-- **Problem**: neo4j driver 会话关闭后迭代未消费的 Result 报 `ResultConsumedError`。
-- **Root Cause**: `records = session.run(...)` 在 `with session` 外使用。
-- **Solution**: `records = list(session.run(...))`（会话内物化）。
-- **Validation**: 集成测试通过。
-- **Git commit**: `dcf6023` 系。
-
-### B5. 计划/评审发现的代码缺陷（一轮修复）
-
-- **Status**: `resolved`
-- **Problem 清单**: ① `api.ts` `handle(fetch(...))` 传 Promise<Response>；② `characters.py` 参数默认值顺序 SyntaxError；③ 计划缺 `GET /api/novels/{id}` 端点代码；④ `merge_extractions` 测试与实现签名不一致（1 参 vs 2 参）；⑤ `judge_aliases` 计划片段与其自身重试测试矛盾。
-- **Root Cause**: 计划代码缺陷/自相矛盾，由 subagent 评审与测试拦截。
-- **Solution**: 最小修正（见各 commit），并以测试锁死。
-- **Git commit**: `d562039` 系 / `f3baf2a` / `331c6b8` 等。
-
-### B6. extractor 吞掉 4xx 具体状态码
-
-- **Status**: `resolved`
-- **Problem**: `unexpected:LLMError` 无法区分 400/401/403，故障定位困难。
-- **Root Cause**: `extract_one` 把 `LLMError` 作为通用异常捕获，丢失状态码。
-- **Solution**: `llm_client` 增加诊断日志：`[llm] stage=extract|judge status=<code> body=<摘要>`（不含 API key）。
-- **Validation**: 真实评估日志捕获到 `code=Arrearage`/`code=limit_requests`，定位成功。
-- **Git commit**: `36e8019`。
+- 不执行全库 DELETE / DETACH DELETE（含 `MATCH (n:Novel) DELETE n`）
+- 不跨 novel_id 查询或清理 Person
+- 不在 diagnose 模式修改代码/数据/配置
+- 不依赖「数据库初始为空」
+- 不把一次真实 LLM 评估当成 deterministic 测试
+- 不把 LLM 非确定性（judge 判定、提取输出）当确定性结果写死进测试
 
 ---
 
-## C. 环境问题
+## 按域索引
 
-### C1. 沙箱 pip 不可用 → 手动解包依赖
-
-- **Status**: `resolved`（环境特定）
-- **Problem**: pip 在沙箱内无法安装（wheel 解包 Permission denied；venv ensurepip 失败）。
-- **Root Cause**: 沙箱拦截长进程创建目录后的读写/删除。
-- **Solution**: 依赖手动解包到 `backend/.deps`，`conftest.py` 注入 `sys.path`；运行命令带 `PYTHONPATH`。
-- **Validation**: 全量测试绿。
-- **Git commit**: `3267755`（conftest/pyproject 适配）。
-
-### C2. pytest tmp_path/basetemp 被沙箱锁定
-
-- **Status**: `resolved`（环境特定）
-- **Problem**: `tmp_path` fixture 与 basetemp 目录被沙箱锁定，测试 ERROR。
-- **Solution**: ① `epub_factory.build_epub` 改用 `BytesIO`（不落盘、无 tmp_path）；② pytest 禁缓存（`-p no:cacheprovider`）；③ conftest 每次运行唯一 basetemp。
-- **Validation**: 全量测试绿。
-- **Git commit**: `3267755` 系。
-
-### C3. vite build `spawn EPERM`（exec "net use"）
-
-- **Status**: `resolved`（环境特定，补丁易失效）
-- **Problem**: vite 8 加载配置时 `exec("net use")` 被沙箱拒（EPERM）。
-- **Solution**: node_modules 本地 try/catch 补丁（**不提交**；重装 npm 后需重打）。
-- **Validation**: `npm run build` 通过。
-- **Git commit**: 无（本地补丁）。
-
-### C4. 百炼账号欠费 Arrearage（非代码）
-
-- **Status**: `resolved`（账号层，非代码可修）
-- **Problem**: 全部 LLM 调用返回 400 `code=Arrearage`；欠费充值后**又复现**（探测 200 → 运行期再次欠费）。
-- **Root Cause**: 阿里云百炼账号余额/欠费状态（与模型名无关，跨模型均 400）。
-- **Solution**: 用户充值；增加诊断日志以便区分；并发 1 降低限流。
-- **Validation**: 充值后探测 200，完整 ingest 0 失败。
-- **Trade-offs**: 评估依赖账号状态，外部阻塞。
-- **Git commit**: `36e8019`（日志）。
+| 域 | 条目 | 状态 |
+|---|---|---|
+| Neo4j 数据安全 | P01 全库删除事故｜P02 共享实例 | ✅ ✅ |
+| 测试与流程 | P03 计划测试与实现语义互斥 | ✅ |
+| LLM / API 行为 | P04 账号欠费｜P05 限流｜P06 judge 非确定性｜P07 4xx 被吞 | ✅ ✅ 🔍 ✅ |
+| ER 算法 | P08 零共享字称谓未合并｜P09 垃圾别名 hygiene｜P10 共现顺序敏感｜P11 全失败应为 failed | 🔍 🔍 ✅ 🔍 |
+| 环境与沙箱 | P12 沙箱限制清单｜P13 脚本超时丢输出 | ✅ ✅ |
+| 基础设施（防复发） | P14 依赖/驱动 API 坑汇总 | ✅ |
 
 ---
 
-## D. 限制与经验
+## 1. Neo4j 数据安全
 
-### D1. 零共享字称谓对未合并（二老↔傩送、天保↔大老）
+### P01 测试全库删除 Novel → 孤儿数据事故
 
-- **Status**: `investigating`
-- **Problem**: 《边城》真实评估中 `二老`/`傩送`、`天保`/`大老` 各自独立 canonical（零共享字符：{二,老} vs {傩,送}）。
-- **Root Cause**: 字符重叠/子串召回对零共享字无信号；合并依赖「同 chunk 共现 + LLM 判定为同一人」同时成立；首现规则下先出现者（二老/大老）定 canonical 后缓存命中不再复判。
-- **Solution（未定，未改算法）**: mention hygiene / judge 判定加强 / 轻量共现或向量召回（需另行评估）。
-- **Validation**: `docs/evaluation/2026-08-21-biancheng-er-stability.md`（novel `3d782d98`）。
-- **Git commit**: `685d019`（评估报告）。
+- **症状**: 一次集成测试运行后，真实 Novel 节点全部消失，残留 329 孤儿 Person + 577 条 RELATES_TO
+- **根因**: 测试为断言「空列表」执行 `MATCH (n:Novel) DELETE n`；只删 Novel 不删 Person/边
+- **错误做法**: 测试里做无范围 destructive 清理
+- **正确做法**: 删除一律 `db.delete_novel(novel_id)`；测试用独立 novel_id 自建自清；「空列表」用非破坏性结构断言
+- **以后遇到类似问题**: 任何测试/脚本先检查是否存在无 novel_id 范围的 DELETE；见到 `MATCH (n) DELETE n` 一律拒绝
+- **Status**: ✅ resolved
+- **Git commit**: `a534116`（含实例迁移）；规则入 TESTING.md §1/§8
 
-### D2. `傩送二老` 垃圾别名（mention hygiene）
+### P02 共享 Neo4j 实例混入其他业务数据
 
-- **Status**: `investigating`
-- **Problem**: 提取 LLM 输出畸形人物名（如「傩送二老」），被 ER 吸收为别名或独立 canonical。
-- **Root Cause**: judge 契约只有 `resolves_to ∈ 候选 | null`，无「无效 mention 丢弃」选项。
-- **Solution**: 预留 drop 能力（schemas/judge prompt 扩展），下一步单独处理。
-- **Git commit**: 无（未改）。
+- **症状**: 小说项目连接的 Neo4j 含约 4.8 万医疗图谱节点（疾病/药品/食物/…），全局操作可能波及他人数据
+- **根因**: VM 上 python-project compose 栈与小说项目共用 7474/7687
+- **错误做法**: 直接连共享实例跑项目
+- **正确做法**: 独立 `novel-neo4j`（novel-project compose，卷 `novel_neo4j_data`）；共享栈已停用且 `restart=no`
+- **以后遇到类似问题**: 先确认目标实例是 novel-neo4j（空库/只含 Novel/Person/RELATES_TO）；禁止触碰其他标签
+- **Status**: ✅ resolved
+- **Git commit**: `a534116`
 
-### D3. 全部 chunk 失败时 job 状态应为 failed
+---
 
-- **Status**: `investigating`（观察到的 spec 语义缺口，未修）
-- **Problem**: 27/27 chunk 失败时 job 仍为 `completed_with_errors`；spec §5.1 定义「全部 chunk 失败 → failed」。
-- **Root Cause**: `_run_ingest` 只按 `failed_blocks` 非空判 `completed_with_errors`；`failed` 仅在异常路径设置。
-- **Solution**: 需在 `_run_ingest` 终态判定补「全部失败 → failed」（代码变更，未授权未实施）。
+## 2. 测试与流程
 
-### D4. 工具超时杀轮询脚本 → job_id 丢失
+### P03 计划测试与实现语义互斥（流程教训）
 
-- **Status**: 经验
-- **Problem**: 轮询脚本被工具 10 分钟超时终止，Python stdout 缓冲导致已打印的 novel_id/job_id 丢失。
-- **经验**: 长任务脚本用 `python -u`（无缓冲）+ 后台任务方式运行；后端 ingest 是后台任务，脚本被杀不影响后端继续。
-- **Git commit**: 无。
+- **症状**: 计划中 3 个 resolver 测试与「known 整本持续」语义矛盾，任何实现都无法同时通过
+- **根因**: 写计划时测试断言与既定语义（alias 写 known → 缓存命中）未对齐
+- **错误做法**: 为通过测试而削弱行为断言
+- **正确做法**: 以 spec 语义为准修订测试（不削弱断言）；评审拦截计划级矛盾
+- **以后遇到类似问题**: 新测试先对照既有语义锁（TESTING.md §8 回归清单）；多测试互斥时先查语义而非改实现
+- **Status**: ✅ resolved
+- **Git commit**: `f3baf2a`
 
-### D5. ER 计划测试与实现语义互斥（流程教训）
+---
 
-- **Status**: `resolved`
-- **Problem**: 计划中 3 个测试断言与「known 整本持续（含 alias）」语义互斥（同 chunk 再判 vs 缓存命中）。
-- **Solution**: 以 spec 语义为准修订测试（不削弱行为断言），重跑全绿。
-- **Git commit**: `f3baf2a`。
+## 3. LLM / API 行为
 
-### D6. 同 chunk 共现召回顺序敏感
+### P04 百炼账号欠费（Arrearage）
 
-- **Status**: `resolved`
-- **Problem**: 未知 mention 在已知名之前出现时丢失共现候选（top-5 被字符重合占满）。
-- **Root Cause**: `confirmed` 从空集随处理顺序累积。
-- **Solution**: chunk 预扫描——处理前把本 chunk 中已知名预置进 `confirmed`。
-- **Validation**: 新增正反序一致性测试；51 单元全绿。
-- **Git commit**: `c850bda`。
+- **症状**: 全部 LLM 调用返回 400 `code=Arrearage`「overdue-payment」；充值后可能再次复现
+- **根因**: 阿里云百炼账号余额/欠费状态（跨模型均 400，与模型名无关）
+- **错误做法**: 当成代码 bug 排查
+- **正确做法**: 单次探测确认（任一模型应 200）；区分 `Arrearage` vs `limit_requests` vs validation
+- **以后遇到类似问题**: 先看 `[llm]` 诊断日志的 `code` 字段；Arrearage 是账号问题，找用户充值，不改代码
+- **Status**: ✅ resolved（账号层）
+- **Git commit**: `36e8019`（诊断日志）
+
+### P05 429 限流（limit_requests）
+
+- **症状**: `code=limit_requests`；并发 4 时 27 chunk 大面积失败；并发 1 后 0 失败
+- **根因**: 推理模型（qwen3.7-max-preview）慢且占配额；高并发触发账号限流
+- **错误做法**: 默认 `LLM_CONCURRENCY=4` 跑真实 ingest
+- **正确做法**: 真实评估用 `LLM_CONCURRENCY=1`；429 重试 1 次 + 退避
+- **以后遇到类似问题**: 真实 ingest 报 429 先降并发，再考虑重试策略
+- **Status**: ✅ resolved（配置层）
+- **Git commit**: 配置变更（.env，未提交）
+
+### P06 judge 判定非确定性 + 过度合并
+
+- **症状**: 同一 chunk 同一候选集，不同运行 judge 判「相同」或「不同」；且会把泛指词（水上人/轻薄男子）误并入人物
+- **根因**: LLM 判定概率性（temperature 0.1 仍波动）；judge prompt 对「称谓 vs 本名」「泛指 vs 人名」约束不足
+- **错误做法**: 假设 judge 结果可复现；把单次 judge 输出当 ground truth
+- **正确做法**: 评估多次取趋势；记录 Environment Baseline 以解释差异；测试用 mock judge
+- **以后遇到类似问题**: 消歧结果差异先怀疑 judge 非确定性（对照诊断日志），再怀疑算法
+- **Status**: 🔍 investigating
+- **Git commit**: `685d019`（评估报告）/ `36e8019`（日志）
+
+### P07 LLM 4xx 状态码被吞
+
+- **症状**: failed_blocks 只有 `unexpected:LLMError`，无法区分 400/401/403
+- **根因**: `extract_one` 把 `LLMError` 当通用异常捕获，丢失状态码
+- **错误做法**: 用异常类型猜原因
+- **正确做法**: `llm_client` 记录 `[llm] stage=... status=... body=...`（不含 key）
+- **以后遇到类似问题**: 先看 `[llm]` 日志的 status/code 再定位
+- **Status**: ✅ resolved
+- **Git commit**: `36e8019`
+
+---
+
+## 4. ER 算法 / 消歧
+
+### P08 零共享字称谓对未合并（二老↔傩送、天保↔大老）
+
+- **症状**: 《边城》中 二老/傩送、天保/大老 各自独立 canonical（{二,老} vs {傩,送} 零共享字）
+- **根因**: ① 两成员首次同 chunk 共现时都未知 → 互不为候选；② 提取变异性使「本名」很少与「称谓」同 chunk 被提取（天保 本体罕见与 大老 同现，只有 天保大老 桥接名）；③ judge 判定非确定性（重放证明 二老→傩送 可合并，原运行判不同）
+- **错误做法**: 仅靠「提取输出的人名」做共现召回；假设 judge 稳定
+- **正确做法（待定方向）**: 文本层共现召回（用 chunk 原文中的已知 canonical 作候选，绕开提取变异性）；judge 一致性/质量改进；桥接名传播
+- **以后遇到类似问题**: 消歧失败先分「确定性机制缺口」（重放可复现）vs「judge 非确定性」（重放分歧）
+- **Status**: 🔍 investigating
+- **Git commit**: `685d019`（稳定性评估）/ 诊断重放（未提交代码）
+
+### P09 `傩送二老` 垃圾别名（mention hygiene）
+
+- **症状**: 提取 LLM 输出畸形人物名（如「傩送二老」），被 ER 吸收为别名或独立 canonical
+- **根因**: 提取层畸形输出 + judge 契约无「无效 mention 丢弃」选项（只能 resolves_to 或 null）
+- **错误做法**: 让 ER 忠实吸收提取层垃圾
+- **正确做法（待定）**: judge 契约增加 drop 选项 / 提取层约束
+- **Status**: 🔍 investigating
+
+### P10 同 chunk 共现召回顺序敏感
+
+- **症状**: 未知 mention 出现在已知名之前时丢失共现候选（top-5 被字符重合占满）
+- **根因**: `confirmed` 从空集随处理顺序累积
+- **错误做法**: 假设共现与处理顺序无关
+- **正确做法**: chunk 预扫描——处理前把本 chunk 中已知名预置进 `confirmed`
+- **以后遇到类似问题**: 顺序相关行为先查「状态累积时机」而非召回公式
+- **Status**: ✅ resolved
+- **Git commit**: `c850bda`
+
+### P11 全部 chunk 失败时 job 状态应为 failed
+
+- **症状**: 27/27 chunk 失败时 job 仍为 `completed_with_errors`；spec §5.1 定义「全部失败 → failed」
+- **根因**: `_run_ingest` 只按 failed_blocks 非空判 `completed_with_errors`；`failed` 仅在异常路径设置
+- **错误做法**: 以「有数据输出」倒推状态正确
+- **正确做法（待定）**: 终态判定补「全部 chunk 失败 → failed」（代码变更未授权）
+- **Status**: 🔍 investigating
+
+---
+
+## 5. 环境与沙箱
+
+### P12 沙箱/环境限制清单
+
+- **症状**: ① pip 装不了依赖（wheel 解包 Permission denied）；② pytest `tmp_path`/basetemp 目录被锁；③ vite build `spawn EPERM`（exec "net use"）
+- **根因**: 沙箱拦截长进程创建目录后的读写/删除；禁管道 stdio spawn
+- **错误做法**: 反复重试 pip；在测试里依赖 tmp_path
+- **正确做法**: 依赖手动解包 `backend/.deps`（conftest 注入）；`epub_factory` 用 BytesIO 不落盘；pytest 禁缓存 + 唯一 basetemp；vite 本地 node_modules 补丁（重装后需重打）
+- **以后遇到类似问题**: 沙箱内先走「工作区内目录 + 无管道 spawn」路径；改 `.env` 后重启后端（settings 进程内缓存）
+- **Status**: ✅ resolved（环境特定）
+- **Git commit**: `3267755` 系
+
+### P13 轮询脚本被工具超时杀 + stdout 缓冲丢输出
+
+- **症状**: 长轮询脚本被工具 10 分钟超时终止，已打印的 novel_id/job_id 因 stdout 缓冲丢失
+- **根因**: python stdout 非 tty 时缓冲；工具超时强杀进程
+- **错误做法**: 长任务前台跑 + 依赖 stdout 回显
+- **正确做法**: `python -u` + 后台任务；后端 ingest 是后台任务，脚本被杀不影响后端
+- **Status**: ✅（经验）
+
+---
+
+## 6. 基础设施缺陷（已修，防复发）
+
+### P14 依赖/驱动 API 坑汇总
+
+| 坑 | 根因 | 修法 | commit |
+|---|---|---|---|
+| llm_client 缺 Authorization 头 | 计划代码缺陷，`_api_key` 未用 | POST 补 Bearer 头 + 单测 | `8c25836` |
+| `get_subgraph` ResultConsumedError | `session.run()` 结果在 `with session` 外迭代 | `list(session.run(...))` 会话内物化 | `dcf6023` |
+| Neo4j 属性不支持 map | 属性值仅允许原始类型/数组 | chapters/evidence JSON 序列化存储 | `dcf6023` |
+| ebooklib 0.20 无 `get_title` | 依赖 API 变化 | `getattr(item,"title","")` | `f2b03c6` |
