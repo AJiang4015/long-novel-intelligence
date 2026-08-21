@@ -214,3 +214,80 @@ def test_cooccurrence_candidates_identical_both_orders():
     assert cands_unknown_first is not None and cands_known_first is not None
     assert cands_unknown_first[0] == cands_known_first[0]
     assert "傩送" in cands_unknown_first[0]
+
+
+# ═══════════ 文本层共现召回（V0.2.2）═══════════
+
+SEED_SAT = ["傩送", "大老", "老人", "老船夫", "老马兵", "老道士", "老婆子"]
+
+
+def _recorder(seen):
+    def recorder(text, pending):
+        seen["cands"] = [[c.canonical for c in p.candidates] for p in pending]
+        return AliasJudgeResult.model_validate(
+            {"resolutions": [{"mention": p.mention, "resolves_to": None} for p in pending]})
+    return recorder
+
+
+def test_text_cooccurrence_adds_canonical_absent_from_characters():
+    """chunk 原文含已知 canonical，但 characters 未含它 → 该 canonical 经文本层进入候选。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    r.resolve(make_chunk(1, "A"), extraction(SEED_SAT))  # 饱和 top-5（傩送 零重叠会被字符候选挤出）
+    seen.clear()
+    # characters 只有 翠翠（未知），原文含 傩送 → 傩送 只能来自文本层
+    r.resolve(make_chunk(2, text="傩送和翠翠在河边"), extraction(["翠翠"]))
+    assert seen["cands"][0][0] == "傩送"  # 文本共现优先
+    assert "傩送" in seen["cands"][0]
+
+
+def test_text_cooccurrence_zero_overlap_bridge():
+    """大老↔天保 场景：提取只有 大老/天保大老（天保 本体未被提取），
+    chunk 原文含 天保 → 天保 经文本层成为 大老 的候选，并经 judge 合并。"""
+    j = _Judge({"大老": "天保", "天保大老": "天保"})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1, "A"), extraction(["天保"]))  # 确立 canonical 天保
+    out, _ = r.resolve(make_chunk(2, text="天保大老与天保在河边商量"), extraction(["大老", "天保大老"]))
+    assert [c.name for c in out.characters] == ["天保", "天保"]
+    assert r.canonical_aliases["天保"] == ["大老", "天保大老"]
+    assert j.calls == 1  # 一次批量判定
+
+
+def test_text_no_known_names_no_text_candidates():
+    """chunk 原文未出现任何已知 canonical → 文本层不凭空加入候选。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    r.resolve(make_chunk(1, "A"), extraction(SEED_SAT))
+    seen.clear()
+    # mention 二老 与「老」字种子名字符重叠 → 字符 top-5 被老字人物占满（傩送 零重叠被挤出）；
+    # 原文不含任何种子名 → 文本层贡献为空 → 傩送 不应出现
+    r.resolve(make_chunk(2, text="一个完全不同的段落"), extraction(["二老"]))
+    assert "傩送" not in seen["cands"][0]
+    assert seen["cands"][0][0] == "大老"  # 字符层正常排序（老字重叠优先）
+
+
+def test_text_and_extraction_cooccurrence_dedup():
+    """文本层与 extraction 层共现同一 canonical → 候选去重（只出现一次）。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    r.resolve(make_chunk(1, "A"), extraction(["傩送"]))
+    seen.clear()
+    # 傩送 同时来自 extraction 确认与原文 → 翠翠 的候选里 傩送 恰好一次
+    r.resolve(make_chunk(2, text="傩送和翠翠在河边"), extraction(["傩送", "翠翠"]))
+    cands = seen["cands"][0]
+    assert cands.count("傩送") == 1
+
+
+def test_text_candidates_priority_and_topk_merge():
+    """文本共现与 extraction 共现合并后：共现层（先 extraction 后文本）在前、
+    字符候选在后、总量 ≤ top-k、无重复。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    r.resolve(make_chunk(1, "A"), extraction(["傩送", "天保", "大老", "老人", "老船夫", "老马兵"]))
+    seen.clear()
+    # 傩送 经 extraction 确认；天保 仅在原文出现 → 翠翠 候选 = [傩送, 天保] + 字符填充
+    r.resolve(make_chunk(2, text="天保在河边，傩送和翠翠也在"), extraction(["傩送", "翠翠"]))
+    cands = seen["cands"][0]
+    assert cands[:2] == ["傩送", "天保"]
+    assert len(cands) <= 5
+    assert len(set(cands)) == len(cands)

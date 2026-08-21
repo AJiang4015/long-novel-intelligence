@@ -37,11 +37,14 @@ class EntityResolver:
             | {r.target for r in result.relationships}
         )
         confirmed: set[str] = {self.known[n] for n in chunk_names if n in self.known}
+        # 文本层共现源（V0.2.2）：chunk 原文中出现的已知 canonical/alias → canonical。
+        # 仅作候选信号，绝不直接认定同一人（仍须经 judge）。
+        text_confirmed: set[str] = self._text_mentions(chunk.text)
 
         def do_name(name: str) -> str:
-            canonical, needs_judge = self._resolve_name(name, confirmed)
+            canonical, needs_judge = self._resolve_name(name, confirmed, text_confirmed)
             if needs_judge:
-                pending.append(self._pending_for(name, confirmed))
+                pending.append(self._pending_for(name, confirmed, text_confirmed))
                 return name  # 判定后再替换
             return canonical
 
@@ -81,29 +84,45 @@ class EntityResolver:
         return resolved, failed
 
     # ---- 内部 ----
-    def _resolve_name(self, name: str, confirmed: set[str]) -> tuple[str, bool]:
+    def _text_mentions(self, chunk_text: str) -> set[str]:
+        """chunk 原文中出现的已知 canonical/alias → 对应 canonical 集合。
+
+        子串匹配（如「天保」命中「天保大老」）作为候选信号可接受——它只是多提供一个候选，
+        最终是否同一人仍由 judge 判定；绝不在此直接建立 alias。
+        只扫描当前 chunk 原文，不跨 chunk / 不跨 chapter。
+        """
+        found: set[str] = set()
+        for canonical, names in self._index.items():
+            for n in names:
+                if n in chunk_text:
+                    found.add(canonical)
+                    break
+        return found
+
+    def _resolve_name(self, name: str, confirmed: set[str], text_confirmed: set[str]) -> tuple[str, bool]:
         if name in self.known:
             canonical = self.known[name]
             confirmed.add(canonical)  # 已确认 → 成为后续同名 chunk 内共现候选源
             return canonical, False
-        candidates = self._recall(name, confirmed)
+        candidates = self._recall(name, confirmed, text_confirmed)
         if not candidates:
             self._register(name)
             confirmed.add(name)
             return name, False
         return name, True  # 进 pending，本 chunk 末统一判定
 
-    def _recall(self, mention: str, confirmed: set[str]) -> list[AliasCandidate]:
-        """候选召回：同 chunk 共现（强，优先） + 字符重合/子串（保持原有）。
+    def _recall(self, mention: str, confirmed: set[str], text_confirmed: set[str]) -> list[AliasCandidate]:
+        """候选召回：extraction 共现（强，优先）+ 文本层共现 + 字符重合/子串（保持原有）。
 
-        - confirmed 中的 canonical 与 mention 同段出现 → 高优先候选（解决 二老↔傩送 等零共享字称谓）；
+        - confirmed 中的 canonical（本 chunk 提取输出中已确认）→ 高优先候选；
+        - text_confirmed 中的 canonical（chunk 原文出现）→ 与 extraction 共现同级、高于字符重合；
         - 其余走原有 子串包含优先 + 共享字符数 排序；
-        - 合计截断 RECALL_TOP_K；共现候选先去重（不重复出现在字符候选里）。
+        - 合计截断 RECALL_TOP_K；共现候选先去重（同一 canonical 只出现一次）。
         """
         out: list[AliasCandidate] = []
         seen: set[str] = set()
 
-        # 1) 同 chunk 共现候选（强，优先）
+        # 1) extraction 共现候选（强，优先）
         for canonical in confirmed:
             if canonical == mention or canonical not in self._index or canonical in seen:
                 continue
@@ -113,7 +132,17 @@ class EntityResolver:
                 matched_names=sorted(self._index[canonical]),
             ))
 
-        # 2) 原有字符重合 + 子串候选（排除共现重复）
+        # 2) 文本层共现候选（chunk 原文出现的已知 canonical；优先级同 extraction 共现，高于字符重合）
+        for canonical in text_confirmed:
+            if canonical == mention or canonical not in self._index or canonical in seen:
+                continue
+            seen.add(canonical)
+            out.append(AliasCandidate(
+                canonical=canonical,
+                matched_names=sorted(self._index[canonical]),
+            ))
+
+        # 3) 原有字符重合 + 子串候选（排除共现重复）
         scored: list[tuple[int, int, str]] = []
         for canonical, names in self._index.items():
             if canonical in seen:
@@ -134,8 +163,8 @@ class EntityResolver:
             ))
         return out[:RECALL_TOP_K]
 
-    def _pending_for(self, mention: str, confirmed: set[str]) -> PendingMention:
-        return PendingMention(mention=mention, candidates=self._recall(mention, confirmed))
+    def _pending_for(self, mention: str, confirmed: set[str], text_confirmed: set[str]) -> PendingMention:
+        return PendingMention(mention=mention, candidates=self._recall(mention, confirmed, text_confirmed))
 
     def _apply_judge(self, judge_result: AliasJudgeResult, pending: list[PendingMention]):
         valid_canonicals = {c.canonical for p in pending for c in p.candidates}
