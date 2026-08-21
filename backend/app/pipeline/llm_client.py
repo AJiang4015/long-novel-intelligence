@@ -1,10 +1,13 @@
 import json
+import logging
 import time
 
 import httpx
 from pydantic import ValidationError
 
 from app.schemas.llm import ExtractionResult
+
+logger = logging.getLogger("app.llm_client")
 
 EXTRACTION_SYSTEM_PROMPT = """你是小说人物关系抽取器。给定一段小说文本，抽取其中明确出现的人物，以及人物之间明确的关系。
 严格要求：
@@ -53,6 +56,14 @@ class LLMClient:
         self._model = model
         self._client = http_client or httpx.Client(timeout=60)
 
+    def _log_error(self, stage: str, response: httpx.Response, detail: str = "") -> None:
+        """诊断日志：stage / HTTP status / response body 摘要。绝不记录 Authorization 头或 API key。"""
+        body = (getattr(response, "text", "") or "")[:300].replace("\n", " ")
+        logger.warning(
+            "[llm] stage=%s status=%s detail=%s body=%s",
+            stage, response.status_code, detail, body,
+        )
+
     def extract_chunk(self, text: str) -> ExtractionResult:
         """调用 LLM 抽取单块文本的人物与关系，并按可重试/不可重试区分异常。"""
         response = self._client.post(
@@ -69,16 +80,20 @@ class LLMClient:
             },
         )
         if response.status_code == 429 or response.status_code >= 500:
+            self._log_error("extract", response)
             raise LLMRetryableError(f"http_{response.status_code}")
         if response.status_code >= 400:
+            self._log_error("extract", response)
             raise LLMError(f"http_{response.status_code}")
         try:
             content = response.json()["choices"][0]["message"]["content"]
         except (KeyError, IndexError, ValueError) as exc:
+            self._log_error("extract", response, "invalid_response_shape")
             raise LLMValidationError("invalid_response_shape") from exc
         try:
             return ExtractionResult.model_validate_json(content)
         except ValidationError as exc:
+            self._log_error("extract", response, "validation_error")
             raise LLMValidationError("validation_error") from exc
 
     def judge_aliases(self, chunk_text: str, pending: list["PendingMention"]) -> "AliasJudgeResult":
@@ -106,17 +121,21 @@ class LLMClient:
                 },
             )
             if response.status_code == 429 or response.status_code >= 500:
+                self._log_error("judge", response)
                 if attempt == 0:
                     time.sleep(0.5 * (attempt + 1))
                     continue
                 raise LLMRetryableError(f"http_{response.status_code}")
             if response.status_code >= 400:
+                self._log_error("judge", response)
                 raise LLMError(f"http_{response.status_code}")
             try:
                 content = response.json()["choices"][0]["message"]["content"]
             except (KeyError, IndexError, ValueError) as exc:
+                self._log_error("judge", response, "invalid_response_shape")
                 raise LLMValidationError("invalid_response_shape") from exc
             try:
                 return AliasJudgeResult.model_validate_json(content)
             except ValidationError as exc:
+                self._log_error("judge", response, "validation_error")
                 raise LLMValidationError("validation_error") from exc
