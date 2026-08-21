@@ -295,3 +295,24 @@ def test_upload_resolution_failure_marks_completed_with_errors(client):
         cands = c.get(f"/api/novels/{data['novel_id']}/characters", params={"q": "傩"}).json()
         assert any(x["name"] == "傩送" for x in cands)
         c.app.state.db.delete_novel(data["novel_id"])
+
+
+# ---------------------------------------------------------------- Task 6: 搜索 alias 匹配
+
+
+def test_search_matches_alias(client):
+    db = client.app.state.db
+    nid = f"alias-{uuid.uuid4()}"
+    try:
+        db.upsert_novel(nid, "边城测试", [{"id": 1, "title": "第1章"}])
+        db.upsert_graph(nid, MergedGraph(
+            persons={"傩送": PersonAgg(name="傩送", mention_count=3, chapters={1}, aliases=["二老", "二老爷"])},
+            relationships={},
+        ))
+        cands = client.get(f"/api/novels/{nid}/characters", params={"q": "二老"}).json()
+        assert any(c["name"] == "傩送" for c in cands)
+        # canonical 本身仍可搜
+        cands2 = client.get(f"/api/novels/{nid}/characters", params={"q": "傩"}).json()
+        assert any(c["name"] == "傩送" for c in cands2)
+    finally:
+        db.delete_novel(nid)

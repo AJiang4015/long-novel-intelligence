@@ -83,7 +83,8 @@ class Neo4jDB:
         with self._driver.session() as session:
             records = session.run(
                 """MATCH (p:Person)
-                   WHERE p.novel_id = $novel_id AND p.name CONTAINS $q
+                   WHERE p.novel_id = $novel_id
+                     AND (p.name CONTAINS $q OR ANY(a IN p.aliases WHERE a CONTAINS $q))
                    RETURN p.id AS id, p.name AS name, p.mention_count AS mention_count
                    ORDER BY p.mention_count DESC
                    LIMIT $limit""",
