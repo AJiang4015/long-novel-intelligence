@@ -33,3 +33,33 @@ class ExtractionResult(BaseModel):
         """业务校验：source != target，self-loop 直接丢弃。"""
         self.relationships = [r for r in self.relationships if r.source != r.target]
         return self
+
+
+class AliasCandidate(BaseModel):
+    canonical: str = Field(min_length=1, max_length=50)
+    matched_names: list[str] = Field(default_factory=list)
+
+
+class PendingMention(BaseModel):
+    mention: str = Field(min_length=1, max_length=50)
+    candidates: list[AliasCandidate] = Field(default_factory=list)
+
+
+class AliasResolution(BaseModel):
+    mention: str = Field(min_length=1, max_length=50)
+    resolves_to: str | None = Field(default=None, min_length=1, max_length=50)
+
+
+class AliasJudgeResult(BaseModel):
+    resolutions: list[AliasResolution] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def dedupe_mentions(self):
+        seen: set[str] = set()
+        kept: list[AliasResolution] = []
+        for r in self.resolutions:
+            if r.mention not in seen:
+                seen.add(r.mention)
+                kept.append(r)
+        self.resolutions = kept
+        return self

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.llm import ExtractionResult, RelationshipType
+from app.schemas.llm import AliasJudgeResult, ExtractionResult, RelationshipType
 
 
 def test_extraction_result_valid():
@@ -166,3 +166,25 @@ def test_extract_all_sorts_and_counts_and_callback():
     assert [c.chunk_id for c, _ in bundle.results] == [1, 2]
     assert bundle.failed == []
     assert len(calls) == 2
+
+
+def test_alias_judge_result_valid():
+    r = AliasJudgeResult.model_validate({
+        "resolutions": [
+            {"mention": "二老", "resolves_to": "傩送"},
+            {"mention": "大老", "resolves_to": None},
+        ],
+    })
+    assert r.resolutions[0].resolves_to == "傩送"
+    assert r.resolutions[1].resolves_to is None
+
+
+def test_alias_judge_duplicate_mention_deduped():
+    r = AliasJudgeResult.model_validate({
+        "resolutions": [
+            {"mention": "二老", "resolves_to": "傩送"},
+            {"mention": "二老", "resolves_to": "大老"},
+        ],
+    })
+    assert len(r.resolutions) == 1
+    assert r.resolutions[0].resolves_to == "傩送"
