@@ -5,7 +5,7 @@ import pytest
 from app.config import get_settings
 from app.db.neo4j import Neo4jDB
 from app.pipeline.merger import MergedGraph, PersonAgg, RelAgg
-from app.schemas.llm import RelationshipType
+from app.schemas.llm import AliasJudgeResult, RelationshipType
 
 pytestmark = pytest.mark.integration
 
@@ -109,7 +109,11 @@ from app.schemas.llm import ExtractionResult
 
 
 class FakeLLMClient:
-    """固定返回两组关系（两个 chunk 都确认 love/enmity），验证 weight=2 贯穿全链路。"""
+    """固定返回两组关系（两个 chunk 都确认 love/enmity），验证 weight=2 贯穿全链路。
+
+    Task 5 起 ingest 全链路接入实体消歧（judge=llm_client.judge_aliases），
+    因此基类补齐 judge_aliases（固定：所有 pending mention 独立，不产生别名）。
+    """
 
     def extract_chunk(self, text: str) -> ExtractionResult:
         return ExtractionResult.model_validate({
@@ -119,6 +123,10 @@ class FakeLLMClient:
                 {"source": "王熙凤", "target": "贾宝玉", "type": "enmity", "confidence": 0.8},
             ],
         })
+
+    def judge_aliases(self, chunk_text, pending):
+        return AliasJudgeResult.model_validate(
+            {"resolutions": [{"mention": p.mention, "resolves_to": None} for p in pending]})
 
 
 @pytest.fixture(scope="module")
@@ -216,3 +224,74 @@ def test_list_novels_returns_sorted(client):
     finally:
         for nid in nids:
             db.delete_novel(nid)
+
+
+# ---------------------------------------------------------------- Task 5: ingest 实体消歧接线
+
+
+class FakeLLMWithJudge(FakeLLMClient):
+    """在 FakeLLMClient 基础上提供 judge_aliases（固定：所有 pending mention 独立）。
+
+    注：计划原片段有两处契约缺陷，此处修正 ——
+    1. 未覆盖 extract_chunk：基类固定返回「贾宝玉/林黛玉/王熙凤」，测试对
+       傩送 的断言不可满足；改为从文本抽取人名（傩送/翠翠/翠儿）。
+    2. judge_aliases 返回裸 dict：Task 3 契约要求 AliasJudgeResult
+       （resolver._apply_judge 访问 .resolutions），裸 dict 会触发
+       AttributeError → 误判为消歧失败；改为返回 AliasJudgeResult。
+    """
+
+    def extract_chunk(self, text: str) -> ExtractionResult:
+        names = [n for n in ("傩送", "翠翠", "翠儿") if n in text]
+        return ExtractionResult.model_validate({
+            "characters": [{"name": n} for n in names],
+            "relationships": [],
+        })
+
+    def judge_aliases(self, chunk_text, pending):
+        return AliasJudgeResult.model_validate(
+            {"resolutions": [{"mention": p.mention, "resolves_to": None} for p in pending]})
+
+
+def test_upload_with_resolution_job_state(client):
+    """替换 llm_client 为带 judge 的 fake；验证 job 终态 completed 且 Person 无 aliases 拆分。"""
+    from app.main import create_app as _create
+    from fastapi.testclient import TestClient as _TC
+    from tests.epub_factory import build_epub
+    app = _create()
+    with _TC(app) as c:
+        app.state.llm_client = FakeLLMWithJudge()
+        epub_bytes = build_epub(["傩送和翠翠在河边。", "翠翠等着傩送。"])
+        resp = c.post("/api/novels", files={"file": ("t.epub", epub_bytes, "application/epub+zip")})
+        data = resp.json()
+        job = _wait_job(c, data["job_id"])
+        assert job["status"] == "completed"
+        cands = c.get(f"/api/novels/{data['novel_id']}/characters", params={"q": "傩"}).json()
+        assert any(x["name"] == "傩送" for x in cands)
+        c.app.state.db.delete_novel(data["novel_id"])
+
+
+class FakeLLMWithFailingJudge(FakeLLMWithJudge):
+    """judge 抛错 → 消歧失败：待判定 mention 独立成 canonical，job 终态 completed_with_errors。"""
+
+    def judge_aliases(self, chunk_text, pending):
+        raise ValueError("judge boom")
+
+
+def test_upload_resolution_failure_marks_completed_with_errors(client):
+    """chunk 2 出现可召回新名 翠儿 → pending → judge 抛错 → 终态 completed_with_errors（非 failed）。"""
+    from app.main import create_app as _create
+    from fastapi.testclient import TestClient as _TC
+    from tests.epub_factory import build_epub
+    app = _create()
+    with _TC(app) as c:
+        c.app.state.llm_client = FakeLLMWithFailingJudge()
+        epub_bytes = build_epub(["傩送和翠翠在河边。", "翠儿等着傩送。"])
+        resp = c.post("/api/novels", files={"file": ("t.epub", epub_bytes, "application/epub+zip")})
+        data = resp.json()
+        job = _wait_job(c, data["job_id"])
+        assert job["status"] == "completed_with_errors"
+        assert any(b["error"] == "alias_resolution_failed" for b in job["failed_blocks"])
+        # 消歧失败是预期行为：傩送 仍为 canonical 可搜到
+        cands = c.get(f"/api/novels/{data['novel_id']}/characters", params={"q": "傩"}).json()
+        assert any(x["name"] == "傩送" for x in cands)
+        c.app.state.db.delete_novel(data["novel_id"])

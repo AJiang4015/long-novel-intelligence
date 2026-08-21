@@ -28,20 +28,40 @@ def _run_ingest(novel_id: str, job_id: str, title: str, epub_bytes: bytes,
             raise ValueError("epub 中没有可解析的章节内容")
         chunks = chunk_chapters(chapters, settings.chunk_size, settings.chunk_overlap)
         job_store.update(job_id, total_chunks=len(chunks))
+        from app.pipeline.extractor import FailedBlock
+        from app.pipeline.merger import apply_aliases
+        from app.pipeline.resolver import EntityResolver
+
+        # 抽取（并发，不变）
         bundle = extract_all(
             llm_client, chunks,
             concurrency=settings.llm_concurrency,
             on_chunk_done=lambda: job_store.increment_done(job_id),
         )
-        merged = merge_extractions(bundle.results)
+        # 实体消歧（顺序，整本一个 resolver）
+        resolver = EntityResolver(judge=llm_client.judge_aliases)
+        resolved: list[tuple] = []
+        resolution_failed: list[FailedBlock] = []
+        for chunk, result in bundle.results:  # 已按 chunk_id 升序
+            out, failed = resolver.resolve(chunk, result)
+            resolved.append((chunk, out))
+            if failed:
+                resolution_failed.append(FailedBlock(
+                    chunk_id=chunk.chunk_id,
+                    chapter_id=chunk.chapter_id,
+                    error="alias_resolution_failed",
+                ))
+        merged = merge_extractions(resolved)
+        apply_aliases(merged, resolver.canonical_aliases)
         db.upsert_novel(novel_id, title, [{"id": c.chapter_id, "title": c.chapter_title} for c in chapters])
         db.upsert_graph(novel_id, merged)
         stats = db.count_stats(novel_id)
-        if bundle.failed:
+        all_failed = bundle.failed + resolution_failed
+        if all_failed:
             job_store.update(
                 job_id, status=JobStatus.completed_with_errors,
                 failed_blocks=[{"chunk_id": f.chunk_id, "chapter_id": f.chapter_id, "error": f.error}
-                               for f in bundle.failed],
+                               for f in all_failed],
                 stats=stats,
             )
         else:
