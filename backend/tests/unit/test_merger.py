@@ -1,7 +1,7 @@
 import pytest
 
 from app.pipeline.chunker import Chunk
-from app.pipeline.merger import merge_extractions
+from app.pipeline.merger import MergedGraph, PersonAgg, apply_aliases, merge_extractions
 from app.schemas.llm import ExtractionResult, Relationship, RelationshipType
 
 
@@ -89,3 +89,12 @@ def test_merge_is_deterministic_regardless_of_input_order():
     graph = merge_extractions(list(zip(chunks, results)))
     rel = graph.relationships[("A", "B", RelationshipType.other)]
     assert [e["chunk_id"] for e in rel.evidence] == [1, 2]  # 按 chunk_id 排序后首现顺序
+
+
+def test_apply_aliases_filters_canonical_and_dedupes():
+    graph = MergedGraph(
+        persons={"傩送": PersonAgg(name="傩送", mention_count=2, chapters={1})},
+        relationships={},
+    )
+    apply_aliases(graph, {"傩送": ["二老", "傩送", "二老", "二老爷"]})
+    assert graph.persons["傩送"].aliases == ["二老", "二老爷"]

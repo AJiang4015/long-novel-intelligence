@@ -11,6 +11,7 @@ class PersonAgg:
     name: str
     mention_count: int = 0
     chapters: set[int] = field(default_factory=set)
+    aliases: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -74,3 +75,16 @@ def merge_extractions(extractions: list[tuple[Chunk, ExtractionResult]]) -> Merg
             person.mention_count += 1
             person.chapters.add(chunk.chapter_id)
     return graph
+
+
+def apply_aliases(graph: MergedGraph, canonical_aliases: dict[str, list[str]]) -> None:
+    """把 resolver 的别名映射写回 PersonAgg（排除 canonical 自身、去重、保序）。"""
+    for name, person in graph.persons.items():
+        seen: set[str] = set()
+        aliases: list[str] = []
+        for a in canonical_aliases.get(name, []):
+            if a == name or a in seen:
+                continue
+            seen.add(a)
+            aliases.append(a)
+        person.aliases = aliases

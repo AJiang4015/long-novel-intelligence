@@ -43,9 +43,10 @@ class Neo4jDB:
                 session.run(
                     """MERGE (p:Person {novel_id: $novel_id, name: $name})
                        ON CREATE SET p.id = $person_id
-                       SET p.mention_count = $mention_count, p.chapters = $chapters""",
+                       SET p.mention_count = $mention_count, p.chapters = $chapters, p.aliases = $aliases""",
                     novel_id=novel_id, name=name, person_id=str(uuid4()),
                     mention_count=person.mention_count, chapters=sorted(person.chapters),
+                    aliases=person.aliases,
                 ).consume()
             for (source, target, rtype), rel in merged.relationships.items():
                 session.run(

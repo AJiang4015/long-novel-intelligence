@@ -26,7 +26,7 @@ def db():
 def build_merged():
     return MergedGraph(
         persons={
-            "贾宝玉": PersonAgg(name="贾宝玉", mention_count=3, chapters={1, 2}),
+            "贾宝玉": PersonAgg(name="贾宝玉", mention_count=3, chapters={1, 2}, aliases=["宝玉", "宝二爷"]),
             "林黛玉": PersonAgg(name="林黛玉", mention_count=2, chapters={1}),
             "王熙凤": PersonAgg(name="王熙凤", mention_count=1, chapters={2}),
         },
@@ -63,6 +63,14 @@ def test_upsert_and_subgraph(db, novel_id):
     novel = db.get_novel(novel_id)
     assert novel["title"] == "测试小说"
     assert [c["id"] for c in novel["chapters"]] == [1, 2]
+
+    # aliases 写层验证：Person 节点持久化 aliases（写层 SET p.aliases）
+    with db._driver.session() as session:
+        rec = session.run(
+            "MATCH (p:Person {novel_id: $novel_id, name: $name}) RETURN p.aliases AS aliases",
+            novel_id=novel_id, name="贾宝玉",
+        ).single()
+        assert rec["aliases"] == ["宝玉", "宝二爷"]
 
     cands = db.search_characters(novel_id, "贾")
     assert any(c["name"] == "贾宝玉" for c in cands)
