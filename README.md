@@ -6,7 +6,10 @@
 
 1. `cp .env.example .env`，填写 `BAILIAN_API_KEY`（阿里百炼 API Key）；如修改了 Neo4j 密码需同步 `.env`
    - LLM 使用阿里百炼：`BAILIAN_URL`（OpenAI 兼容地址，默认 `https://dashscope.aliyuncs.com/compatible-mode/v1`）、`BAILIAN_MODEL`（默认 `qwen3.7-max-2026-05-17`）
-2. 启动 Neo4j（本机 Docker：`docker compose up -d neo4j`；或使用远程实例，改 `.env` 的 `NEO4J_URI`）
+2. 启动 Neo4j：
+   - **远程部署（本项目实际使用）**：VM 192.168.127.101 上 `/root/novel-project/docker-compose.yml` 的独立 `novel-neo4j` 实例（neo4j:5.26.0，端口 7474/7687，密码 `12345678`，数据卷 `novel_neo4j_data`，与任何其他项目完全隔离）
+   - 本机 Docker 备用：`docker compose up -d neo4j`（仓库 compose 与远程实例配置一致）
+   - `.env` 的 `NEO4J_URI` 指向实际实例：`bolt://192.168.127.101:7687`（本机部署则 `bolt://localhost:7687`）
 3. 后端：`cd backend && pip install -e ".[dev]" && uvicorn app.main:app --reload --port 8000`
    - 若本机 pip 不可用（如沙箱环境），依赖可手动解包到 `backend/.deps`，运行前设置 `$env:PYTHONPATH='backend\.deps'`
 4. 前端：`cd frontend && npm install && npm run dev`（访问 http://localhost:5173）
