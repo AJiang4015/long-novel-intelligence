@@ -60,7 +60,7 @@ UI/UX 和 Design System 的唯一事实来源。
 
 ---
 
-### problem.md
+### PROBLEM.md
 
 项目长期问题知识库。
 
@@ -74,7 +74,7 @@ UI/UX 和 Design System 的唯一事实来源。
 * 环境问题
 * 限制与经验
 
-任何非 trivial 的问题解决后必须更新 `problem.md`。
+任何非 trivial 的问题解决后必须更新 `PROBLEM.md`。
 
 ---
 
@@ -83,7 +83,7 @@ UI/UX 和 Design System 的唯一事实来源。
 开始任何开发或 Debug 任务之前：
 
 1. 阅读 `AGENTS.md`
-2. 阅读 `problem.md`
+2. 阅读 `PROBLEM.md`
 3. 根据任务类型阅读：
 
    * UI → `DESIGN.md`
@@ -95,7 +95,7 @@ UI/UX 和 Design System 的唯一事实来源。
 5. 不假设工作区是干净的。
 6. 不覆盖其他 Agent 已有修改。
 
-如果发现当前任务与 `problem.md` 中已有问题相关，优先遵循已有解决方案和限制。
+如果发现当前任务与 `PROBLEM.md` 中已有问题相关，优先遵循已有解决方案和限制。
 
 ---
 
@@ -242,24 +242,49 @@ MATCH (n:Novel) DELETE n
 
 # 10. Problem Knowledge Base
 
-每次解决一个非 trivial 问题后：
+`PROBLEM.md` 是**问题知识库**，不是流水账/档案索引。目的是让 Agent 遇到类似现象时能快速判断「先查什么、不做什么、怎么处理」。
 
-1. 更新 `problem.md`
-2. 记录：
+## 记录标准
 
-   * Problem
-   * Root Cause
-   * Why
-   * Solution
-   * Validation
-   * Trade-offs
-   * Git commit
-3. 如果问题仍未完全解决，状态标记为：
-   `investigating`
+**必须记录**（满足任一条）：
 
-不得把未经验证的猜测写成最终根因。
+* 造成数据损坏/丢失风险
+* 需要花时间排查、根因不明显
+* 可能再次发生（尤其 Agent 很容易重复犯）
+* 有架构/工程决策（含权衡）
+* 外部服务/环境限制（账号、沙箱、限流）
+* 性能/并发问题
+* LLM 特有行为（非确定性、欠费、限流、畸形输出）
 
-不得删除历史问题记录。
+**不需要记录**：
+
+* 拼写错误、一眼可见的语法错误、临时 typo
+* 改一个变量名
+* 普通 UI 微调
+
+## 条目结构
+
+每个条目按「可行动的知识」组织，不是事件回放：
+
+```markdown
+### PXX <一句话问题名（可搜索）>
+- 症状: 现象（可复现）
+- 根因: 已验证的直接/根本原因（不得写猜测）
+- 错误做法: 曾经导致问题的做法
+- 正确做法: 应该怎么做
+- 以后遇到类似问题: 先查什么 / 不要做什么 / 怎么处理
+- Status: ✅ resolved | 🔍 investigating（必须视觉区分）
+- Git commit: <相关 commit>
+```
+
+已解决与调查中的条目必须用状态标记视觉区分（✅ / 🔍），顶部提供按域索引表。
+
+## 维护规则
+
+* 解决非 trivial 问题后按上述结构更新；未完全解决标 `🔍 investigating`
+* 不得把未经验证的猜测写成最终根因
+* 不得删除历史条目（只增改）
+* 记录高频坑的「Do / Don't」于 `PROBLEM.md` §0，替代单条流水账
 
 ---
 
@@ -267,10 +292,10 @@ MATCH (n:Novel) DELETE n
 
 当问题产生新的长期规则时：
 
-* `problem.md` 记录事故和历史
+* `PROBLEM.md` 记录事故、根因与「以后怎么办」（知识库）
 * `TESTING.md` 记录测试规则
 * `DESIGN.md` 记录视觉规则
-* `AGENTS.md` 记录 Agent 必须遵守的长期工程规则
+* `AGENTS.md` 记录 Agent 必须遵守的长期工程规则（含高频 Do / Don't）
 
 不要把所有内容都堆进单个文件。
 
@@ -316,7 +341,7 @@ git diff
 3. 测试结果
 4. build 结果
 5. 任何已知限制
-6. 是否更新 `problem.md`
+6. 是否更新 `PROBLEM.md`
 
 ---
 
@@ -329,3 +354,30 @@ git diff
 > Verify explicitly.
 > Record important problems.
 > Never destroy unrelated data.
+
+---
+
+# 15. Do / Don't（高频踩坑速查）
+
+> 详细根因与「以后怎么办」见 `PROBLEM.md`。此表用于开工前快速过一遍，避免重复踩坑。
+
+## Do
+
+* 删除数据一律 `db.delete_novel(novel_id)`（按 id 精确，删除前 dry-run 列目标）
+* 每个测试用例创建独立 `novel_id`，结束后只清理自己的
+* `EntityResolver` 一次 ingest 一个实例（`known`/mention index 整本持续）
+* 长任务脚本用 `python -u`（无缓冲）+ 后台任务方式运行
+* 真实 LLM 评估前记录 Environment Baseline（commit/model/chunk/concurrency/novel_id/Neo4j 版本）
+* 修改 `resolver.py` 后跑 `test_resolver.py` 回归清单（TESTING.md §8）
+* LLM 调用报错时先看诊断日志 `[llm] stage=... status=... code=...`（区分 Arrearage/限流/validation）
+* 改 `.env` 后必须重启后端（settings 进程内缓存）
+
+## Don't
+
+* 不执行全库 DELETE / DETACH DELETE（含 `MATCH (n:Novel) DELETE n`）
+* 不跨 novel_id 查询或清理 Person
+* 不在 diagnose 模式修改代码/数据/配置
+* 不依赖「数据库初始为空」
+* 不把一次真实 LLM 评估当成 deterministic 测试
+* 不为「代码更漂亮」改动已稳定的 API / DTO / 行为
+* 不把 LLM 的非确定性（judge 判定、提取输出）当成确定性结果写死进测试
