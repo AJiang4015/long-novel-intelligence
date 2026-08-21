@@ -36,6 +36,7 @@ class LLMClient:
         self._client = http_client or httpx.Client(timeout=60)
 
     def extract_chunk(self, text: str) -> ExtractionResult:
+        """调用 LLM 抽取单块文本的人物与关系，并按可重试/不可重试区分异常。"""
         response = self._client.post(
             f"{self._base_url}/chat/completions",
             headers={"Authorization": f"Bearer {self._api_key}"},

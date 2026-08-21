@@ -1,3 +1,4 @@
+/** EmptyState.tsx —— 通用空状态展示（图标块 + 标题 + 引导文案） */
 import type { ReactNode } from "react";
 
 interface EmptyStateProps {

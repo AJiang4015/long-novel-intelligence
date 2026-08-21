@@ -1,0 +1,1 @@
+"""小说处理流水线包：EPUB 解析（epub_reader）→ 文本切块（chunker）→ LLM 抽取（llm_client/extractor）→ 关系聚合（merger）。"""

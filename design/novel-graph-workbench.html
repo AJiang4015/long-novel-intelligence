@@ -1,0 +1,1055 @@
+
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>人物关系图谱 · 分析工作台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+<style>
+/* ════════════════════════════════════════════════════════════════
+   人物关系图谱 · 分析工作台 V0.2
+   令牌与组件样式与 design-system.html 共用（单一事实来源）。
+   ════════════════════════════════════════════════════════════════ */
+:root{
+  --bg:         oklch(97.5% .006 250);
+  --surface:    oklch(100% 0 0);
+  --elevated:   oklch(100% 0 0);
+  --border:     oklch(90% .01 250);
+  --border-2:   oklch(84% .012 250);
+  --fg:         oklch(24% .025 250);
+  --text-2:     oklch(40% .02 250);
+  --muted:      oklch(50% .018 250);
+  --accent:         oklch(58% .16 145);
+  --accent-strong:  color-mix(in oklch, var(--accent) 78%, black);
+  --accent-hover:   color-mix(in oklch, var(--accent) 68%, black);
+  --accent-soft:    color-mix(in oklch, var(--accent) 12%, white);
+  --success:        oklch(47% .12 158);
+  --success-soft:   color-mix(in oklch, var(--success) 10%, white);
+  --warning:        oklch(55% .12 75);
+  --warning-soft:   color-mix(in oklch, var(--warning) 13%, white);
+  --danger:         oklch(52% .17 27);
+  --danger-soft:    color-mix(in oklch, var(--danger) 10%, white);
+  --neutral-soft:   color-mix(in oklch, var(--fg) 5%, white);
+  --rel-love:       oklch(52% .19 12);
+  --rel-family:     oklch(50% .15 305);
+  --rel-friendship: oklch(50% .14 250);
+  --rel-enmity:     oklch(51% .2 28);
+  --rel-alliance:   oklch(52% .12 195);
+  --rel-mentorship: oklch(55% .14 70);
+  --rel-other:      oklch(55% .02 250);
+  --font-display: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --fs-title: 16px; --fs-section: 13px; --fs-body: 14px; --fs-2: 13px; --fs-caption: 12px; --fs-xs: 11px;
+  --fs-stat: 22px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px; --sp-8:40px;
+  --r-1:4px; --r-2:6px; --r-3:8px; --r-4:10px; --r-pill:999px;
+  --sh-1: 0 1px 2px oklch(24% .02 250 / .05), 0 1px 1px oklch(24% .02 250 / .04);
+  --sh-2: 0 2px 4px oklch(24% .02 250 / .05), 0 8px 20px -6px oklch(24% .02 250 / .10);
+  --sh-3: 0 2px 6px oklch(24% .02 250 / .08), 0 12px 32px -8px oklch(24% .02 250 / .18);
+  --z-top:100; --z-tooltip:110; --z-drawer:120; --z-toast:140;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:var(--fs-body);line-height:1.6;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden}
+img,svg{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+button{font:inherit;cursor:pointer}
+p{margin:0}
+h1,h2,h3,h4{margin:0}
+.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+
+/* ─── 按钮 ─── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 var(--sp-4);border-radius:var(--r-2);border:1px solid transparent;background:transparent;color:var(--fg);font-size:var(--fs-2);font-weight:500;letter-spacing:-.005em;white-space:nowrap;transition:background .12s ease,border-color .12s ease,color .12s ease}
+.btn svg{width:15px;height:15px}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent-strong);color:var(--surface);border-color:var(--accent-strong)}
+.btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn-secondary{border-color:var(--border-2);color:var(--fg);background:var(--surface)}
+.btn-secondary:hover{border-color:var(--fg);background:var(--neutral-soft)}
+.btn-ghost{color:var(--text-2)}
+.btn-ghost:hover{color:var(--accent-strong);background:var(--accent-soft)}
+.btn-icon{width:30px;height:30px;padding:0;border-color:transparent;color:var(--text-2)}
+.btn-icon:hover{color:var(--fg);background:var(--neutral-soft);border-color:var(--border)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn:focus-visible,.input:focus-visible,.search-input:focus-visible,.suggest-row:focus-visible,.btn-icon:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ─── 输入 / 搜索 ─── */
+.input{height:32px;padding:0 var(--sp-3);border:1px solid var(--border-2);border-radius:var(--r-2);background:var(--surface);color:var(--fg);font:inherit;font-size:var(--fs-body);width:100%;transition:border-color .12s ease,box-shadow .12s ease}
+.input::placeholder{color:var(--muted)}
+.input:hover:not(:disabled){border-color:var(--muted)}
+.input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search{position:relative}
+.search .search-box{position:relative}
+.search .search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--muted);pointer-events:none}
+.search .search-clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:22px;height:22px;display:grid;place-items:center;border:0;background:transparent;color:var(--muted);border-radius:var(--r-1)}
+.search .search-clear:hover{color:var(--fg);background:var(--neutral-soft)}
+.search-input{height:34px;width:100%;padding:0 30px 0 32px;border:1px solid var(--border-2);border-radius:var(--r-2);background:var(--surface);color:var(--fg);font:inherit;font-size:var(--fs-body);transition:border-color .12s ease,box-shadow .12s ease}
+.search-input::placeholder{color:var(--muted)}
+.search-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.suggest{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:var(--z-tooltip);background:var(--elevated);border:1px solid var(--border);border-radius:var(--r-3);box-shadow:var(--sh-2);overflow:hidden;max-height:330px;overflow-y:auto;padding:4px}
+.suggest-head{padding:6px 10px 4px;font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.suggest-row{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);width:100%;padding:8px 10px;border:0;background:transparent;border-radius:var(--r-2);font-size:var(--fs-body);color:var(--fg);text-align:left}
+.suggest-row:hover{background:var(--neutral-soft)}
+.suggest-row .sr-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.suggest-row .sr-name .sr-hl{color:var(--accent-strong);font-weight:600}
+.suggest-row .sr-meta{display:flex;align-items:center;gap:5px;font-size:var(--fs-caption);color:var(--muted);font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.suggest-row .sr-meta .sr-arrow{color:var(--accent-strong);opacity:0;transition:opacity .12s ease}
+.suggest-row:hover .sr-arrow{opacity:1}
+.suggest-empty{padding:14px 10px;color:var(--muted);font-size:var(--fs-2);text-align:center}
+
+/* ─── 徽标 / 面板 / 分隔 ─── */
+.badge{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:var(--r-pill);font-size:var(--fs-xs);font-weight:500;white-space:nowrap;background:var(--neutral-soft);color:var(--text-2)}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.badge-success{background:var(--success-soft);color:var(--success)}
+.badge-warning{background:var(--warning-soft);color:var(--warning)}
+.badge-danger{background:var(--danger-soft);color:var(--danger)}
+.badge-accent{background:var(--accent-soft);color:var(--accent-strong)}
+.badge-running .dot{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.rel-badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:var(--r-pill);font-size:var(--fs-caption);font-weight:600;border:1px solid transparent;white-space:nowrap}
+.rel-badge .swatch{width:14px;height:3px;border-radius:2px}
+.rel-badge[data-type=love]{background:color-mix(in oklch,var(--rel-love) 11%,white);color:var(--rel-love);border-color:color-mix(in oklch,var(--rel-love) 26%,white)}
+.rel-badge[data-type=family]{background:color-mix(in oklch,var(--rel-family) 11%,white);color:var(--rel-family);border-color:color-mix(in oklch,var(--rel-family) 26%,white)}
+.rel-badge[data-type=friendship]{background:color-mix(in oklch,var(--rel-friendship) 11%,white);color:var(--rel-friendship);border-color:color-mix(in oklch,var(--rel-friendship) 26%,white)}
+.rel-badge[data-type=enmity]{background:color-mix(in oklch,var(--rel-enmity) 11%,white);color:var(--rel-enmity);border-color:color-mix(in oklch,var(--rel-enmity) 26%,white)}
+.rel-badge[data-type=alliance]{background:color-mix(in oklch,var(--rel-alliance) 11%,white);color:var(--rel-alliance);border-color:color-mix(in oklch,var(--rel-alliance) 26%,white)}
+.rel-badge[data-type=mentorship]{background:color-mix(in oklch,var(--rel-mentorship) 11%,white);color:var(--rel-mentorship);border-color:color-mix(in oklch,var(--rel-mentorship) 26%,white)}
+.rel-badge[data-type=other]{background:color-mix(in oklch,var(--rel-other) 11%,white);color:var(--rel-other);border-color:color-mix(in oklch,var(--rel-other) 26%,white)}
+.rel-badge .swatch[data-type=love]{background:var(--rel-love)}
+.rel-badge .swatch[data-type=family]{background:var(--rel-family)}
+.rel-badge .swatch[data-type=friendship]{background:var(--rel-friendship)}
+.rel-badge .swatch[data-type=enmity]{background:var(--rel-enmity)}
+.rel-badge .swatch[data-type=alliance]{background:var(--rel-alliance)}
+.rel-badge .swatch[data-type=mentorship]{background:var(--rel-mentorship)}
+.rel-badge .swatch[data-type=other]{background:var(--rel-other)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-4);padding:var(--sp-4)}
+.section-title{font-size:var(--fs-section);font-weight:600;letter-spacing:.02em;color:var(--text-2);text-transform:uppercase}
+.divider{border:0;border-top:1px solid var(--border);margin:0}
+.stat-cell{display:flex;flex-direction:column;gap:2px}
+.stat-cell .stat-value{font-family:var(--font-mono);font-size:var(--fs-stat);font-weight:600;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat-cell .stat-label{font-size:var(--fs-caption);color:var(--muted)}
+
+/* ─── 进度 / 空状态 / 加载 / 错误 ─── */
+.progress{height:6px;border-radius:var(--r-pill);background:var(--neutral-soft);overflow:hidden}
+.progress-fill{height:100%;border-radius:var(--r-pill);background:var(--success);transition:width .3s ease}
+.progress-fill.is-running{background:var(--accent)}
+.progress-lg{height:8px}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-2);text-align:center;padding:var(--sp-7) var(--sp-5);color:var(--muted)}
+.empty .empty-icon{width:44px;height:44px;border-radius:var(--r-3);background:var(--neutral-soft);color:var(--muted);display:grid;place-items:center;margin-bottom:var(--sp-1)}
+.empty .empty-icon svg{width:22px;height:22px}
+.empty .empty-title{font-size:var(--fs-body);font-weight:600;color:var(--text-2)}
+.empty .empty-desc{font-size:var(--fs-2);max-width:30ch}
+.spinner{width:18px;height:18px;border-radius:50%;border:2px solid var(--border-2);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-banner{display:flex;gap:var(--sp-3);align-items:flex-start;background:var(--danger-soft);border:1px solid color-mix(in oklch,var(--danger) 30%,white);border-radius:var(--r-3);padding:var(--sp-3) var(--sp-4);font-size:var(--fs-2);color:var(--danger)}
+.error-banner svg{width:16px;height:16px;flex:none;margin-top:2px}
+
+/* ─── 工具提示 / 抽屉 / Toast ─── */
+.tooltip{position:fixed;z-index:var(--z-tooltip);pointer-events:none;background:oklch(24% .025 250 / .96);color:oklch(96% .005 250);border-radius:var(--r-2);padding:8px 10px;font-size:var(--fs-caption);line-height:1.5;box-shadow:var(--sh-2);max-width:250px;transform:translate(-50%,calc(-100% - 10px))}
+.tooltip .tt-title{font-weight:600;color:oklch(100% 0 0);font-size:13px}
+.tooltip .tt-meta{display:flex;gap:10px;margin-top:3px;font-family:var(--font-mono);color:oklch(78% .01 250);font-variant-numeric:tabular-nums}
+.tooltip .tt-edge{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);margin-top:2px}
+.tooltip .tt-edge .tt-dot{width:10px;height:3px;border-radius:2px}
+.drawer-overlay{position:fixed;inset:0;background:oklch(24% .025 250 / .32);z-index:var(--z-drawer);display:flex;justify-content:flex-end}
+.drawer{width:min(460px,100vw);height:100%;background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--sh-3);display:flex;flex-direction:column;animation:drawer-in .22s cubic-bezier(.2,.7,.3,1)}
+@keyframes drawer-in{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:var(--sp-4) var(--sp-5);border-bottom:1px solid var(--border);height:52px;flex:none}
+.drawer-head h3{font-size:var(--fs-title);font-weight:600}
+.drawer-body{padding:var(--sp-5);overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:var(--sp-4)}
+.dropzone{display:flex;flex-direction:column;align-items:center;gap:var(--sp-2);border:1.5px dashed var(--border-2);border-radius:var(--r-3);padding:32px 16px;text-align:center;background:var(--bg);cursor:pointer;transition:border-color .12s ease,background .12s ease}
+.dropzone:hover{border-color:var(--accent);background:color-mix(in oklch,var(--accent) 4%,white)}
+.dropzone .dz-title{font-size:var(--fs-body);font-weight:500}
+.dropzone .dz-title .dz-link{color:var(--accent-strong)}
+.dropzone .dz-hint{font-size:var(--fs-caption);color:var(--muted)}
+.file-row{display:flex;align-items:center;gap:var(--sp-3);background:var(--neutral-soft);border:1px solid var(--border);border-radius:var(--r-2);padding:10px 12px}
+.file-row .fr-name{flex:1;min-width:0;font-size:var(--fs-2);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row .fr-meta{font-size:var(--fs-caption);color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:var(--z-toast);background:oklch(24% .025 250 / .96);color:oklch(96% .005 250);border-radius:var(--r-3);padding:10px 16px;font-size:var(--fs-2);box-shadow:var(--sh-3);display:flex;align-items:center;gap:8px}
+.toast .toast-dot{width:7px;height:7px;border-radius:50%;background:var(--success)}
+.toast.is-info .toast-dot{background:var(--accent)}
+
+/* ═══════ 应用壳 ═══════ */
+.topbar{flex:none;height:52px;display:flex;align-items:center;gap:var(--sp-4);padding:0 var(--sp-4);background:var(--surface);border-bottom:1px solid var(--border);z-index:var(--z-top)}
+.brand{display:flex;align-items:center;gap:var(--sp-2);font-weight:600;font-size:14px;letter-spacing:-.01em;white-space:nowrap}
+.brand .brand-glyph{width:24px;height:24px;border-radius:var(--r-1);background:var(--accent-soft);color:var(--accent-strong);display:grid;place-items:center}
+.brand .brand-glyph svg{width:15px;height:15px}
+.brand .brand-sub{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--muted);font-weight:400}
+.topbar-sep{width:1px;height:20px;background:var(--border);flex:none}
+.novel-chip{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+.novel-chip .nc-label{font-size:var(--fs-caption);color:var(--muted);white-space:nowrap}
+.novel-chip .nc-title{font-size:var(--fs-body);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar-actions{margin-left:auto;display:flex;align-items:center;gap:var(--sp-3)}
+.topbar-actions .link-ds{font-size:var(--fs-caption);color:var(--muted);padding:4px 6px;border-radius:var(--r-1)}
+.topbar-actions .link-ds:hover{color:var(--fg);background:var(--neutral-soft)}
+
+.shell{flex:1;display:grid;grid-template-columns:300px minmax(0,1fr) 380px;min-height:0}
+
+/* 左侧栏 */
+.left{overflow-y:auto;background:var(--bg);border-right:1px solid var(--border);padding:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-5);min-width:0}
+.left-sec-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3)}
+.left-sec-title .section-title{font-size:var(--fs-caption);letter-spacing:.06em}
+.novel-card{display:flex;flex-direction:column;gap:var(--sp-3)}
+.novel-card .nc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-2)}
+.novel-card .nc-name{font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em}
+.novel-card .nc-meta{display:flex;flex-direction:column;gap:3px;font-size:var(--fs-2);color:var(--text-2)}
+.novel-card .nc-meta .num{color:var(--fg);font-weight:500}
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--sp-4);padding:var(--sp-4) 0;border-top:1px solid var(--border)}
+.center-chip{padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-4);display:flex;flex-direction:column;gap:var(--sp-2)}
+.center-chip .cc-name{display:flex;align-items:center;gap:var(--sp-2)}
+.center-chip .cc-name .cc-name-text{font-size:15px;font-weight:600}
+.center-chip .cc-sub{font-size:var(--fs-caption);color:var(--muted)}
+.progress-card{display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-4)}
+.progress-card .pc-head{display:flex;justify-content:space-between;align-items:center;font-size:var(--fs-2);color:var(--text-2)}
+.progress-card .pc-nums{font-size:var(--fs-caption);color:var(--muted)}
+.left-foot{margin-top:auto;padding-top:var(--sp-4);border-top:1px solid var(--border);font-size:var(--fs-caption);color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.left-foot .foot-link{color:var(--text-2)}
+.left-foot .foot-link:hover{color:var(--accent-strong)}
+
+/* 中央画布 */
+.center{display:flex;flex-direction:column;min-width:0;background:var(--surface);min-height:0}
+.graph-toolbar{flex:none;height:46px;display:flex;align-items:center;gap:var(--sp-3);padding:0 var(--sp-4);border-bottom:1px solid var(--border);background:var(--surface)}
+.graph-toolbar .gt-left{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+.graph-toolbar .gt-label{font-size:var(--fs-caption);color:var(--muted);white-space:nowrap}
+.graph-toolbar .gt-center-name{font-size:14px;font-weight:600;white-space:nowrap}
+.graph-toolbar .gt-right{margin-left:auto;display:flex;align-items:center;gap:var(--sp-1)}
+.graph-canvas{flex:1;position:relative;min-height:0;background-color:var(--surface);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:22px 22px}
+.graph-canvas svg{position:absolute;inset:0;width:100%;height:100%}
+.graph-hint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:var(--sp-3);background:var(--elevated);border:1px solid var(--border);border-radius:var(--r-pill);padding:6px 14px;font-size:var(--fs-caption);color:var(--muted);box-shadow:var(--sh-1);white-space:nowrap}
+.graph-hint .hint-sep{width:1px;height:12px;background:var(--border)}
+.graph-legend{position:absolute;top:14px;right:14px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--r-3);box-shadow:var(--sh-1);padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:132px}
+.graph-legend .lg-title{font-size:var(--fs-caption);font-weight:600;color:var(--text-2);margin-bottom:2px}
+.graph-legend .lg-row{display:flex;align-items:center;gap:8px;font-size:var(--fs-caption);color:var(--text-2)}
+.graph-legend .lg-row .lg-line{width:22px;height:3px;border-radius:2px;flex:none}
+.graph-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-3);background:color-mix(in oklch,var(--surface) 78%,transparent);z-index:5;font-size:var(--fs-2);color:var(--text-2)}
+.graph-processing{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-4);background:var(--surface);z-index:4;padding:var(--sp-6);text-align:center}
+.graph-processing .gp-title{font-size:var(--fs-title);font-weight:600}
+.graph-processing .gp-bar{width:min(420px,80%)}
+.graph-processing .gp-nums{font-size:var(--fs-2);color:var(--text-2);font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.graph-processing .gp-caption{font-size:var(--fs-caption);color:var(--muted)}
+
+/* 关系图节点/边 */
+.graph-node{cursor:pointer}
+.graph-node .node-core{transition:filter .12s ease}
+.graph-node:hover .node-core{filter:drop-shadow(0 2px 4px oklch(24% .02 250 / .25))}
+.graph-node:not(.is-center):hover .node-core{stroke:var(--accent);stroke-width:2.4}
+.graph-node .node-label{font-size:12.5px;fill:var(--text-2);font-weight:500;pointer-events:none}
+.graph-node.is-center .node-label{fill:var(--fg);font-weight:600}
+.graph-node:hover .node-label{fill:var(--fg)}
+.graph-edge{stroke-linecap:round;cursor:pointer;transition:stroke-width .12s ease,opacity .12s ease}
+.edge-hit{stroke:transparent;stroke-width:16;fill:none;cursor:pointer}
+.edge-love{stroke:var(--rel-love)}
+.edge-family{stroke:var(--rel-family)}
+.edge-friendship{stroke:var(--rel-friendship)}
+.edge-enmity{stroke:var(--rel-enmity);stroke-dasharray:7 5}
+.edge-alliance{stroke:var(--rel-alliance)}
+.edge-mentorship{stroke:var(--rel-mentorship);stroke-dasharray:1 5;stroke-linecap:round}
+.edge-other{stroke:var(--rel-other);stroke-dasharray:2 4}
+.edge-wrap:hover .graph-edge{stroke-width:4}
+.edge-wrap:hover .edge-label-pill rect{stroke-width:1.6}
+.graph-edge.is-selected{stroke-width:4}
+.edge-label-pill{pointer-events:none}
+.edge-label-pill rect{fill:var(--surface);stroke:var(--border-2);stroke-width:1;transition:stroke-width .12s ease}
+.graph-edge:hover ~ .edge-label-pill rect,.graph-edge.is-selected ~ .edge-label-pill rect{stroke-width:1.6}
+.edge-label-pill.is-love{color:var(--rel-love)}.edge-label-pill.is-family{color:var(--rel-family)}
+.edge-label-pill.is-friendship{color:var(--rel-friendship)}.edge-label-pill.is-enmity{color:var(--rel-enmity)}
+.edge-label-pill.is-alliance{color:var(--rel-alliance)}.edge-label-pill.is-mentorship{color:var(--rel-mentorship)}
+.edge-label-pill.is-other{color:var(--rel-other)}
+.edge-label-pill text{fill:currentColor;font-size:11px;font-weight:600}
+svg.has-selection .graph-edge:not(.is-selected){opacity:.32}
+svg.has-selection .edge-label-pill:not(.is-selected){opacity:.35}
+
+/* 右侧证据栏 */
+.right{overflow-y:auto;background:var(--bg);border-left:1px solid var(--border);min-width:0;display:flex;flex-direction:column}
+.right-head{flex:none;display:flex;align-items:center;justify-content:space-between;padding:var(--sp-4) var(--sp-5);border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:2}
+.right-body{padding:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-5);min-height:0}
+.rel-summary{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
+.rel-summary .rs-endpoint{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rel-summary .rs-endpoint .rs-name{font-size:15px;font-weight:600;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rel-summary .rs-endpoint .rs-sub{font-size:var(--fs-caption);color:var(--muted);font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.rel-summary .rs-arrow{color:var(--muted)}
+.meta-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--sp-3)}
+.meta-cell{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-3);padding:var(--sp-3) var(--sp-4);display:flex;flex-direction:column;gap:3px}
+.meta-cell .mc-label{font-size:var(--fs-caption);color:var(--muted)}
+.meta-cell .mc-value{font-size:15px;font-weight:600;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.meta-cell .mc-value .mc-unit{font-size:var(--fs-caption);color:var(--muted);font-weight:400}
+.conf-meter{display:flex;gap:3px;margin-top:2px}
+.conf-meter i{width:8px;height:8px;border-radius:2px;background:var(--border-2)}
+.conf-meter i.on{background:var(--success)}
+.ev-head{display:flex;align-items:center;justify-content:space-between;margin-top:var(--sp-1)}
+.ev-head .ev-count{font-family:var(--font-mono);font-size:var(--fs-caption);color:var(--muted)}
+.evidence-item{padding:var(--sp-4) 0}
+.evidence-item+.evidence-item{border-top:1px solid var(--border)}
+.evidence-ref{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-caption);color:var(--muted);margin-bottom:var(--sp-2)}
+.evidence-ref .chapter-no{font-family:var(--font-mono);color:var(--text-2);font-weight:600;white-space:nowrap}
+.evidence-text{margin:0;font-size:14.5px;line-height:1.85;color:var(--fg);padding:var(--sp-3) var(--sp-4);background:var(--neutral-soft);border-radius:var(--r-3);border:1px solid var(--border)}
+.detail-note{font-size:var(--fs-caption);color:var(--muted)}
+
+@media (max-width:1180px){
+  .shell{grid-template-columns:276px minmax(0,1fr) 348px}
+}
+@media (max-width:980px){
+  body{overflow:auto}
+  .shell{display:block}
+  .left,.right{border:0;border-bottom:1px solid var(--border)}
+  .graph-canvas{min-height:520px}
+  .novel-chip{display:none}
+  .right{max-height:640px}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ 顶部产品栏 ═══ -->
+<header class="topbar" data-od-id="topbar">
+  <span class="brand">
+    <span class="brand-glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="17" r="2.4"/><circle cx="17" cy="6" r="2.4"/><circle cx="17" cy="17" r="2.4"/><path d="M8 15.5 15 8M15.5 8.4 15.5 14.6"/></svg>
+    </span>
+    人物关系图谱
+    <span class="brand-sub">GRAPH WORKBENCH</span>
+  </span>
+  <span class="topbar-sep"></span>
+  <div class="novel-chip">
+    <span class="nc-label">当前小说</span>
+    <span class="nc-title" id="topNovelTitle">红楼梦</span>
+    <span class="badge badge-success" id="topStatusBadge"><span class="dot"></span>分析完成</span>
+  </div>
+  <div class="topbar-actions">
+    <a class="link-ds" href="design-system.html">设计系统</a>
+    <button class="btn btn-primary" id="btnUpload" data-od-id="btn-upload">上传新小说</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <!-- ═══ 左侧：小说信息 / 统计 / 搜索 ═══ -->
+  <aside class="left" data-od-id="left-panel">
+    <section class="panel novel-card" data-od-id="novel-card">
+      <div class="nc-head">
+        <span class="nc-name" id="novelName">红楼梦</span>
+        <span class="badge badge-accent">演示数据</span>
+      </div>
+      <div class="nc-meta">
+        <span>章回 <span class="num" id="metaChapters">120</span> · 文本块 <span class="num" id="metaChunks">1,284</span></span>
+        <span>分析状态 <span id="metaStatusText">已完成</span></span>
+      </div>
+    </section>
+
+    <section class="progress-card" id="progressCardWrap" data-od-id="progress-card" hidden>
+      <div class="pc-head"><span>分析进度</span><span class="badge badge-warning badge-running"><span class="dot"></span>分析中</span></div>
+      <div class="progress progress-lg"><div class="progress-fill is-running" id="pcBar" style="width:0%"></div></div>
+      <div class="pc-nums" id="pcNums">0 / 1,284 块 · 0%</div>
+    </section>
+
+    <section id="statsSection" data-od-id="stats-grid">
+      <div class="left-sec-title"><span class="section-title">小说统计</span><span class="detail-note">来自分析结果</span></div>
+      <div class="stats-grid">
+        <div class="stat-cell"><span class="stat-value num" id="statPersons">22</span><span class="stat-label">人物</span></div>
+        <div class="stat-cell"><span class="stat-value num" id="statRelations">26</span><span class="stat-label">关系</span></div>
+        <div class="stat-cell"><span class="stat-value num" id="statChapters">120</span><span class="stat-label">章节</span></div>
+        <div class="stat-cell"><span class="stat-value num" id="statChunks">1,284</span><span class="stat-label">文本块</span></div>
+      </div>
+    </section>
+
+    <section data-od-id="character-search">
+      <div class="left-sec-title"><span class="section-title">人物搜索</span></div>
+      <div class="search">
+        <div class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input class="search-input" id="searchInput" placeholder="搜索人物，如 黛玉 / 凤姐" autocomplete="off" />
+          <button class="search-clear" id="searchClear" aria-label="清空" hidden>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <div class="suggest" id="suggest" hidden></div>
+      </div>
+    </section>
+
+    <section class="center-chip" data-od-id="center-chip">
+      <div class="left-sec-title" style="margin-bottom:0"><span class="section-title">当前中心人物</span></div>
+      <div class="cc-name">
+        <span class="cc-name-text" id="centerName">贾宝玉</span>
+        <span class="badge badge-accent">中心</span>
+      </div>
+      <div class="cc-sub"><span class="num" id="centerMention">提及 982 块</span></div>
+      <div class="cc-sub" id="centerSubgraph">1-hop 子图 · 12 人物 · 16 关系</div>
+    </section>
+
+    <div class="left-foot">
+      <span>界面演示使用《红楼梦》示例数据，仅用于展示分析结果样式。</span>
+      <a class="foot-link" href="design-system.html">查看设计系统规范 ↗</a>
+    </div>
+  </aside>
+
+  <!-- ═══ 中央：关系图 ═══ -->
+  <main class="center" data-od-id="graph-panel">
+    <div class="graph-toolbar" data-od-id="graph-toolbar">
+      <div class="gt-left">
+        <span class="gt-label">中心人物</span>
+        <span class="gt-center-name" id="toolCenterName">贾宝玉</span>
+        <span class="badge" id="toolCenterMention"><span class="num">982</span> 提及</span>
+        <span class="badge" id="toolCenterHop">1-hop</span>
+      </div>
+      <div class="gt-right">
+        <button class="btn btn-icon" id="btnZoomIn" aria-label="放大" data-od-id="zoom-in">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button class="btn btn-icon" id="btnZoomOut" aria-label="缩小" data-od-id="zoom-out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="btn btn-icon" id="btnFit" aria-label="适应视图" data-od-id="zoom-fit">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="graph-canvas" id="graphCanvas" data-od-id="graph-canvas">
+      <svg id="graphSvg" viewBox="0 0 900 600" preserveAspectRatio="xMidYMid meet" aria-label="人物一跳关系图">
+        <g id="graphRoot"></g>
+      </svg>
+      <div class="graph-legend" data-od-id="graph-legend">
+        <span class="lg-title">关系类型</span>
+        <div class="lg-row"><span class="lg-line" style="background:var(--rel-love)"></span>爱恋</div>
+        <div class="lg-row"><span class="lg-line" style="background:var(--rel-family)"></span>家族</div>
+        <div class="lg-row"><span class="lg-line" style="background:var(--rel-friendship)"></span>友谊</div>
+        <div class="lg-row"><span class="lg-line" style="background:var(--rel-enmity);border:1px dashed var(--rel-enmity);height:0"></span>敌对</div>
+        <div class="lg-row"><span class="lg-line" style="background:var(--rel-alliance)"></span>同盟</div>
+        <div class="lg-row"><span class="lg-line" style="background:var(--rel-mentorship);height:0;border-top:2px dotted var(--rel-mentorship)"></span>师承</div>
+        <div class="lg-row"><span class="lg-line" style="background:var(--rel-other);height:0;border-top:1.5px dotted var(--rel-other)"></span>其他</div>
+      </div>
+      <div class="graph-loading" id="graphLoading" hidden>
+        <span class="spinner" role="status" aria-label="加载中"></span>
+        <span>正在加载子图…</span>
+      </div>
+      <div class="graph-processing" id="graphProcessing" hidden>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+        <span class="gp-title" id="procTitle">正在分析《红楼梦》</span>
+        <div class="gp-bar"><div class="progress progress-lg"><div class="progress-fill is-running" id="procBar" style="width:0%"></div></div></div>
+        <span class="gp-nums" id="procNums">0 / 1,284 块 · 0%</span>
+        <span class="gp-caption">切块 → 并发抽取人物与关系 → 聚合写入图谱</span>
+      </div>
+      <div class="graph-hint" id="graphHint">
+        <span>点击人物切换中心</span><span class="hint-sep"></span><span>点击连线查看原文证据</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══ 右侧：关系详情 / 证据 ═══ -->
+  <aside class="right" data-od-id="details-panel">
+    <div class="right-head">
+      <span class="section-title">关系详情</span>
+      <button class="btn btn-icon" id="btnCloseDetail" aria-label="关闭详情" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="right-body">
+      <div class="empty" id="detailsEmpty" data-od-id="details-empty">
+        <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="17" r="2.4"/><circle cx="17" cy="6" r="2.4"/><circle cx="17" cy="17" r="2.4"/><path d="M8 15.5 15 8M15.5 8.4 15.5 14.6"/></svg></div>
+        <span class="empty-title">未选择关系</span>
+        <p class="empty-desc">点击关系图中的任意连线，查看关系详情与原文证据。</p>
+      </div>
+      <div id="detailsContent" hidden></div>
+    </div>
+  </aside>
+</div>
+
+<!-- ═══ 上传抽屉 ═══ -->
+<div class="drawer-overlay" id="uploadOverlay" hidden>
+  <div class="drawer" role="dialog" aria-modal="true" aria-label="上传新小说">
+    <div class="drawer-head">
+      <h3>上传新小说</h3>
+      <button class="btn btn-icon" id="btnCloseDrawer" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body" data-od-id="upload-drawer">
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="选择或拖拽 epub 文件">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.7"><path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <div class="dz-title">拖拽 .epub 文件到此处，或<span class="dz-link">点击选择文件</span></div>
+        <div class="dz-hint">支持 .epub · 最大 50MB · 上传后自动开始分析</div>
+      </div>
+      <input type="file" id="fileInput" accept=".epub" hidden />
+      <div class="file-row" id="fileRow" hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="1.7"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+        <div style="flex:1;min-width:0">
+          <div class="fr-name" id="fileName"></div>
+          <div class="fr-meta" id="fileMeta"></div>
+        </div>
+        <button class="btn btn-icon" id="btnRemoveFile" aria-label="移除文件">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div id="uploadError" hidden></div>
+      <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:auto">
+        <button class="btn btn-ghost" id="btnCancelUpload">取消</button>
+        <button class="btn btn-primary" id="btnStartAnalyze" disabled>开始分析</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" data-od-id="toast" hidden>
+  <span class="toast-dot"></span><span id="toastText"></span>
+</div>
+<div class="tooltip" id="tooltip" hidden></div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   原型数据 —— 严格对应后端 DTO：
+   CharacterCandidate{id,name,mention_count}
+   GraphEdge{source_id,target_id,type,weight,confidence,evidence[]}
+   Evidence{chapter_id,chapter_title,text}
+   演示数据：人物与统计为示例，原文片段仅供界面示意。
+   ════════════════════════════════════════════════════════════════ */
+const TYPE_LABEL = { love:"爱恋", family:"家族", friendship:"友谊", enmity:"敌对", alliance:"同盟", mentorship:"师承", other:"其他" };
+
+const CHARACTERS = [
+  { id:"baoyu",       name:"贾宝玉",   mention_count:982 },
+  { id:"daiyu",       name:"林黛玉",   mention_count:761 },
+  { id:"baochai",     name:"薛宝钗",   mention_count:542 },
+  { id:"fengjie",     name:"王熙凤",   mention_count:489 },
+  { id:"jiamu",       name:"贾母",     mention_count:423 },
+  { id:"jiazheng",    name:"贾政",     mention_count:386 },
+  { id:"xiren",       name:"袭人",     mention_count:352 },
+  { id:"qingwen",     name:"晴雯",     mention_count:298 },
+  { id:"xiangyun",    name:"史湘云",   mention_count:275 },
+  { id:"jiaolian",    name:"贾琏",     mention_count:244 },
+  { id:"wangfuren",   name:"王夫人",   mention_count:232 },
+  { id:"tanchun",     name:"贾探春",   mention_count:211 },
+  { id:"xuepan",      name:"薛蟠",     mention_count:198 },
+  { id:"ping'er",     name:"平儿",     mention_count:166 },
+  { id:"zijuan",      name:"紫鹃",     mention_count:148 },
+  { id:"jiashe",      name:"贾赦",     mention_count:141 },
+  { id:"jiayucun",    name:"贾雨村",   mention_count:130 },
+  { id:"miaoyu",      name:"妙玉",     mention_count:124 },
+  { id:"zhaoyiniang", name:"赵姨娘",   mention_count:97 },
+  { id:"beijingwang", name:"北静王",   mention_count:84 },
+  { id:"youerjie",    name:"尤二姐",   mention_count:63 },
+  { id:"qinzhong",    name:"秦钟",     mention_count:76 },
+];
+
+const EDGES = [
+  { source_id:"baoyu", target_id:"daiyu", type:"love", weight:86, confidence:.96, evidence:[
+    { chapter_id:3, chapter_title:"贾雨村夤缘复旧职 · 林黛玉抛父进京都", text:"宝玉看罢，因笑道：\u201c这个妹妹我曾见过的。\u201d贾母笑道：\u201c可又是胡说，你又何曾见过他？\u201d宝玉笑道：\u201c虽然未曾见过他，然我看着面善，心里就算是旧相识，今日只作远别重逢，亦未为不可。\u201d" },
+    { chapter_id:23, chapter_title:"西厢记妙词通戏语 · 牡丹亭艳曲警芳心", text:"宝玉笑道：\u201c我就是个\u2018多愁多病身\u2019，你就是那\u2018倾国倾城貌\u2019。\u201d林黛玉听了，不觉带腮连耳通红，登时竖起两道似蹙非蹙的眉，瞪起两只似睁非睁的眼。" },
+    { chapter_id:19, chapter_title:"情切切良宵花解语 · 意绵绵静日玉生香", text:"（示例片段）宝玉借\u201c扬州黛山林子洞\u201d的耗子精故事取笑黛玉，称林妹妹才是真正的\u201c香玉\u201d，黛玉又气又笑。" },
+  ]},
+  { source_id:"baoyu", target_id:"baochai", type:"love", weight:71, confidence:.94, evidence:[
+    { chapter_id:28, chapter_title:"蒋玉菡情赠茜香罗 · 薛宝钗羞笼红麝串", text:"宝钗原生的肌肤丰泽，容易褪不下来。宝玉在旁看着雪白一段酥臂，不觉动了羡慕之心，暗暗想道：\u201c这个膀子要长在林妹妹身上，或者还得摸一摸……\u201d" },
+    { chapter_id:34, chapter_title:"情中情因情感妹妹 · 错里错以错劝哥哥", text:"宝钗见他睁开眼说话，不像先时，心中也宽慰了好些，便点头叹道：\u201c早听人一句话，也不至今日。别说老太太、太太心疼，就是我们看着，心里也疼。\u201d" },
+  ]},
+  { source_id:"baoyu", target_id:"jiamu", type:"family", weight:64, confidence:.97, evidence:[
+    { chapter_id:3, chapter_title:"贾雨村夤缘复旧职 · 林黛玉抛父进京都", text:"贾母因笑道：\u201c外客未见，就脱了衣裳，还不去见你妹妹！\u201d宝玉早已看见多了一个姊妹，便料定是林姑妈之女，忙来作揖。" },
+    { chapter_id:33, chapter_title:"手足眈眈小动唇舌 · 不肖种种大承笞挞", text:"（示例片段）贾政毒打宝玉，贾母闻讯赶来厉声喝止，护孙心切，老泪纵横。" },
+  ]},
+  { source_id:"baoyu", target_id:"jiazheng", type:"family", weight:58, confidence:.95, evidence:[
+    { chapter_id:33, chapter_title:"手足眈眈小动唇舌 · 不肖种种大承笞挞", text:"贾政喘吁吁直挺挺坐在椅子上，满面泪痕，一叠声：\u201c拿宝玉！拿大棍！拿索子捆上！把各门都关上！\u201d" },
+    { chapter_id:17, chapter_title:"大观园试才题对额 · 荣国府归省庆元宵", text:"（示例片段）大观园题匾，贾政对宝玉所作对额多有苛责，实则暗中称许，父子之间严慈相济。" },
+  ]},
+  { source_id:"baoyu", target_id:"wangfuren", type:"family", weight:52, confidence:.94, evidence:[
+    { chapter_id:33, chapter_title:"手足眈眈小动唇舌 · 不肖种种大承笞挞", text:"王夫人哭道：\u201c宝玉虽然该打，老爷也要自重。况且炎天暑日的，老太太身上也不大好，打死宝玉事小，倘或老太太一时不自在了，岂不事大！\u201d" },
+  ]},
+  { source_id:"baoyu", target_id:"jiashe", type:"family", weight:30, confidence:.88, evidence:[
+    { chapter_id:75, chapter_title:"开夜宴异兆发悲音 · 赏中秋新词得佳谶", text:"（示例片段）中秋赏月联诗，贾赦当众称赞宝玉所作诗句\u201c有骨气\u201d，并赏赐玩物。" },
+  ]},
+  { source_id:"baoyu", target_id:"xiren", type:"other", weight:48, confidence:.90, evidence:[
+    { chapter_id:6, chapter_title:"贾宝玉初试云雨情 · 刘姥姥一进荣国府", text:"袭人素知贾母已将自己与了宝玉的，今便如此，亦不为越礼，遂和宝玉偷试一番，幸得无人撞见。" },
+    { chapter_id:19, chapter_title:"情切切良宵花解语 · 意绵绵静日玉生香", text:"（示例片段）袭人借赎身之说规劝宝玉，要他读书上进、不可任意任情，主仆情分愈深。" },
+  ]},
+  { source_id:"baoyu", target_id:"qingwen", type:"friendship", weight:41, confidence:.91, evidence:[
+    { chapter_id:31, chapter_title:"撕扇子作千金一笑 · 因麒麟伏白首双星", text:"晴雯听了，笑道：\u201c既这么说，你就拿了扇子来我撕。我最喜欢撕的。\u201d宝玉听了，便笑着递与他。" },
+  ]},
+  { source_id:"baoyu", target_id:"xiangyun", type:"friendship", weight:39, confidence:.93, evidence:[
+    { chapter_id:20, chapter_title:"王熙凤正言弹妒意 · 林黛玉俏语谑娇音", text:"（示例片段）湘云来贾府，一见宝玉便笑说\u201c二哥哥\u201d（咬舌），宝玉黛玉笑她说话咬舌，三人说笑一团。" },
+  ]},
+  { source_id:"baoyu", target_id:"zhaoyiniang", type:"enmity", weight:23, confidence:.82, evidence:[
+    { chapter_id:25, chapter_title:"魇魔法叔嫂逢五鬼 · 通灵玉蒙蔽遇双真", text:"（示例片段）赵姨娘暗中托马道婆以巫蛊之术魇镇宝玉与凤姐，致二人不省人事，合府慌乱。" },
+  ]},
+  { source_id:"baoyu", target_id:"beijingwang", type:"alliance", weight:18, confidence:.78, evidence:[
+    { chapter_id:14, chapter_title:"林如海捐馆扬州城 · 贾宝玉路谒北静王", text:"（示例片段）北静王路祭秦可卿，见宝玉神采，邀其常去府中谈会，二人自此交好。" },
+  ]},
+  { source_id:"daiyu", target_id:"baochai", type:"friendship", weight:44, confidence:.92, evidence:[
+    { chapter_id:45, chapter_title:"金兰契互剖金兰语 · 风雨夕闷制风雨词", text:"黛玉叹道：\u201c你素日待人，固然是极好的，然我最是个多心的人，只当你心里藏奸。从前日你说看杂书不好，又劝我那些好话，竟大感激你……\u201d" },
+    { chapter_id:42, chapter_title:"蘅芜君兰言解疑癖 · 潇湘子雅谑补余香", text:"（示例片段）宝钗见黛玉行酒令说出《西厢记》词句，私下劝诫，黛玉自此心服。" },
+  ]},
+  { source_id:"daiyu", target_id:"jiamu", type:"family", weight:55, confidence:.95, evidence:[
+    { chapter_id:3, chapter_title:"贾雨村夤缘复旧职 · 林黛玉抛父进京都", text:"黛玉方进入房时，只见两个人搀着一位鬓发如银的老母迎上来，黛玉便知是他外祖母。方欲拜见时，早被他外祖母一把搂入怀中，心肝儿肉叫着大哭起来。" },
+    { chapter_id:97, chapter_title:"林黛玉焚稿断痴情 · 薛宝钗出闺成大礼", text:"（示例片段）黛玉病危，贾母前来探视，祖孙相对泪下。" },
+  ]},
+  { source_id:"daiyu", target_id:"zijuan", type:"other", weight:33, confidence:.89, evidence:[
+    { chapter_id:57, chapter_title:"慧紫鹃情辞试忙玉 · 慈姨妈爱语慰痴颦", text:"（示例片段）紫鹃谎称\u201c林妹妹要回苏州去\u201d，试探宝玉真心，宝玉登时痴病发作。" },
+  ]},
+  { source_id:"daiyu", target_id:"jiayucun", type:"mentorship", weight:12, confidence:.85, evidence:[
+    { chapter_id:2, chapter_title:"贾夫人仙逝扬州城 · 冷子兴演说荣国府", text:"（示例片段）林如海聘贾雨村为西宾，课黛玉读书识字，黛玉自此称雨村为老师。" },
+  ]},
+  { source_id:"daiyu", target_id:"miaoyu", type:"friendship", weight:18, confidence:.78, evidence:[
+    { chapter_id:41, chapter_title:"栊翠庵茶品梅花雪 · 怡红院劫遇母蝗虫", text:"黛玉因问：\u201c这也是旧年的雨水？\u201d妙玉冷笑道：\u201c你这么个人，竟是大俗人，连水也尝不出来。这是五年前我在玄墓蟠香寺住着，收的梅花上的雪……\u201d" },
+  ]},
+  { source_id:"jiazheng", target_id:"jiamu", type:"family", weight:44, confidence:.95, evidence:[
+    { chapter_id:33, chapter_title:"手足眈眈小动唇舌 · 不肖种种大承笞挞", text:"贾母含泪说道：\u201c先打死我，再打死他，岂不干净了！\u201d一面说，一面只令快打点行李车轿回去。（示例片段）" },
+  ]},
+  { source_id:"jiashe", target_id:"jiamu", type:"family", weight:38, confidence:.94, evidence:[
+    { chapter_id:75, chapter_title:"开夜宴异兆发悲音 · 赏中秋新词得佳谶", text:"（示例片段）中秋家宴，贾赦讲\u201c偏心\u201d笑话暗讽贾母，贾母佯作不解，席间气氛微妙。" },
+  ]},
+  { source_id:"xiren", target_id:"qingwen", type:"friendship", weight:21, confidence:.80, evidence:[
+    { chapter_id:31, chapter_title:"撕扇子作千金一笑 · 因麒麟伏白首双星", text:"晴雯冷笑道：\u201c我倒不知道你们是谁，别教我替你们害臊了！便是你们鬼鬼祟祟干的那事儿，也瞒不过我去。\u201d" },
+  ]},
+  { source_id:"fengjie", target_id:"jiaolian", type:"family", weight:47, confidence:.93, evidence:[
+    { chapter_id:44, chapter_title:"变生不测凤姐泼醋 · 喜出望外平儿理妆", text:"（示例片段）凤姐生日宴上撞破贾琏偷情，泼醋大闹，夫妻反目，平儿无辜受屈。" },
+  ]},
+  { source_id:"fengjie", target_id:"ping'er", type:"alliance", weight:35, confidence:.88, evidence:[
+    { chapter_id:6, chapter_title:"贾宝玉初试云雨情 · 刘姥姥一进荣国府", text:"（示例片段）平儿是凤姐的陪嫁丫鬟与心腹，二人形影不离，府中上下事务多经平儿之手。" },
+  ]},
+  { source_id:"baochai", target_id:"xuepan", type:"family", weight:31, confidence:.90, evidence:[
+    { chapter_id:34, chapter_title:"情中情因情感妹妹 · 错里错以错劝哥哥", text:"（示例片段）宝玉挨打后宝钗疑是薛蟠所告，回家劝诫，薛蟠气急反唇相讥，兄妹争吵。" },
+  ]},
+  { source_id:"baochai", target_id:"xiangyun", type:"friendship", weight:25, confidence:.87, evidence:[
+    { chapter_id:38, chapter_title:"林潇湘魁夺菊花诗 · 薛蘅芜讽和螃蟹咏", text:"（示例片段）湘云起社无钱做东，宝钗暗中出资置办螃蟹宴，为湘云周全体面。" },
+  ]},
+  { source_id:"tanchun", target_id:"zhaoyiniang", type:"family", weight:17, confidence:.77, evidence:[
+    { chapter_id:55, chapter_title:"辱亲女愚妾争闲气 · 欺幼主刁奴蓄险心", text:"探春道：\u201c……太太满心疼我，因姨娘每每生事，几次寒心。我但凡是个男人，可以出得去，我必早走了，立一番事业……\u201d" },
+  ]},
+  { source_id:"fengjie", target_id:"jiamu", type:"family", weight:40, confidence:.92, evidence:[
+    { chapter_id:3, chapter_title:"贾雨村夤缘复旧职 · 林黛玉抛父进京都", text:"凤姐携着黛玉的手，上下细细打谅了一回，仍送至贾母身边坐下，因笑道：\u201c天下真有这样标致的人物，我今儿才算见了！\u201d" },
+  ]},
+  { source_id:"jiaolian", target_id:"youerjie", type:"other", weight:29, confidence:.84, evidence:[
+    { chapter_id:65, chapter_title:"贾二舍偷娶尤二姨 · 尤三姐思嫁柳二郎", text:"（示例片段）贾琏瞒着凤姐偷娶尤二姐为二房，安置于花枝巷内。" },
+  ]},
+];
+
+/* ═══════════ 状态 ═══════════ */
+let centerId = "baoyu";
+let zoom = 1;
+let selectedKey = null;
+let phase = "graph"; // graph | processing
+let jobTimer = null;
+const edgeByKey = new Map();
+EDGES.forEach(e => edgeByKey.set(edgeKey(e), e));
+
+const $ = (s) => document.querySelector(s);
+const fmt = (n) => n.toLocaleString("zh-CN");
+function char(id){ return CHARACTERS.find(c => c.id === id); }
+function edgeKey(e){ return e.source_id + "__" + e.target_id + "__" + e.type; }
+function getSubgraph(cid){
+  const inc = EDGES.filter(e => e.source_id === cid || e.target_id === cid);
+  const ids = new Set(inc.flatMap(e => [e.source_id, e.target_id]));
+  const nodes = CHARACTERS.filter(c => ids.has(c.id));
+  const edges = EDGES.filter(e => ids.has(e.source_id) && ids.has(e.target_id));
+  return { center: char(cid), nodes, edges };
+}
+
+/* ═══════════ 关系图渲染 ═══════════ */
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CX = 450, CY = 300;
+function nodeRadius(id){
+  if (id === centerId) return 20;
+  const m = char(id).mention_count;
+  return Math.round(8 + Math.sqrt(m / 982) * 9);
+}
+function edgeWidth(e){ return Math.min(3.4, Math.max(2.2, 1 + Math.log2(e.weight + 1) * 0.42)); }
+function shorten(a, b, ra, rb){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  return [a.x + ux * ra, a.y + uy * ra, b.x - ux * rb, b.y - uy * rb];
+}
+
+function renderGraph(){
+  const g = getSubgraph(centerId);
+  const { center, nodes, edges } = g;
+  const nbrs = nodes.filter(n => n.id !== center.id);
+  const R = Math.min(212, 110 + nbrs.length * 10);
+  const pos = {};
+  nbrs.forEach((n, i) => {
+    const angle = -Math.PI / 2 + (i / nbrs.length) * Math.PI * 2;
+    pos[n.id] = { x: CX + Math.cos(angle) * R, y: CY + Math.sin(angle) * R };
+  });
+  pos[center.id] = { x: CX, y: CY };
+
+  const root = $("#graphRoot");
+  let html = "";
+
+  /* 边（先画，节点覆盖其上） */
+  for (const e of edges) {
+    const a = pos[e.source_id], b = pos[e.target_id];
+    const [x1, y1, x2, y2] = shorten(a, b, nodeRadius(e.source_id), nodeRadius(e.target_id));
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const label = TYPE_LABEL[e.type];
+    const lw = label.length * 12 + 18, lh = 19;
+    const key = edgeKey(e);
+    const sel = key === selectedKey ? " is-selected" : "";
+    html += `
+      <g class="edge-wrap">
+        <path class="edge-hit" data-key="${key}" d="M${x1},${y1} L${x2},${y2}"/>
+        <path class="graph-edge edge-${e.type}${sel}" data-key="${key}" d="M${x1},${y1} L${x2},${y2}" stroke-width="${edgeWidth(e)}"/>
+        <g class="edge-label-pill is-${e.type}${sel}" data-key="${key}" transform="translate(${mx - lw/2}, ${my - lh/2})">
+          <rect width="${lw}" height="${lh}" rx="9.5"/>
+          <text x="${lw/2}" y="${lh/2 + 4}" text-anchor="middle">${label}</text>
+        </g>
+      </g>`;
+  }
+
+  /* 节点 */
+  for (const n of nodes) {
+    const p = pos[n.id];
+    const r = nodeRadius(n.id);
+    const isCenter = n.id === center.id;
+    if (isCenter) {
+      html += `
+        <g class="graph-node is-center" data-id="${n.id}" transform="translate(${p.x},${p.y})">
+          <circle class="node-core" r="${r + 8}" fill="var(--accent-soft)"/>
+          <circle class="node-core" r="${r}" fill="var(--accent)"/>
+          <circle class="node-core" r="${r}" fill="none" stroke="var(--surface)" stroke-width="3"/>
+          <text class="node-label" y="${r + 22}" text-anchor="middle">${n.name}</text>
+        </g>`;
+    } else {
+      html += `
+        <g class="graph-node" data-id="${n.id}" transform="translate(${p.x},${p.y})">
+          <circle class="node-core" r="${r}" fill="var(--surface)" stroke="var(--border-2)" stroke-width="1.6"/>
+          <text class="node-label" y="${r + 15}" text-anchor="middle">${n.name}</text>
+        </g>`;
+    }
+  }
+  root.innerHTML = html;
+  applyZoom();
+  updateChips(g);
+}
+
+function applyZoom(){
+  zoom = Math.min(2.5, Math.max(0.5, zoom));
+  $("#graphRoot").setAttribute("transform", `translate(${CX} ${CY}) scale(${zoom}) translate(${-CX} ${-CY})`);
+}
+
+function updateChips(g){
+  const c = g.center;
+  $("#toolCenterName").textContent = c.name;
+  $("#centerName").textContent = c.name;
+  $("#toolCenterMention").innerHTML = `<span class="num">${fmt(c.mention_count)}</span> 提及`;
+  $("#centerMention").textContent = `提及 ${fmt(c.mention_count)} 块`;
+  $("#centerSubgraph").textContent = `1-hop 子图 · ${g.nodes.length} 人物 · ${g.edges.length} 关系`;
+  $("#toolCenterHop").textContent = g.nodes.length <= 1 ? "孤立" : "1-hop";
+}
+
+/* ═══════════ 节点 / 边交互 ═══════════ */
+const svg = $("#graphSvg");
+const tooltip = $("#tooltip");
+
+function showTooltip(html, x, y){
+  tooltip.innerHTML = html;
+  tooltip.hidden = false;
+  moveTooltip(x, y);
+}
+function moveTooltip(x, y){
+  if (tooltip.hidden) return;
+  const pad = 14;
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+  let tx = x, ty = y - th - 12;
+  if (tx + tw / 2 > window.innerWidth - pad) tx = window.innerWidth - pad - tw / 2;
+  if (tx - tw / 2 < pad) tx = pad + tw / 2;
+  if (ty < pad) ty = y + 18;
+  tooltip.style.left = tx + "px";
+  tooltip.style.top = ty + "px";
+}
+function hideTooltip(){ tooltip.hidden = true; }
+
+svg.addEventListener("mousemove", (e) => moveTooltip(e.clientX, e.clientY));
+svg.addEventListener("mouseleave", hideTooltip);
+svg.addEventListener("mouseover", (e) => {
+  const nEl = e.target.closest(".graph-node");
+  const eEl = e.target.closest(".graph-edge, .edge-hit");
+  if (nEl && !nEl.classList.contains("is-center")) {
+    const c = char(nEl.dataset.id);
+    showTooltip(`<span class="tt-title">${c.name}</span><div class="tt-meta"><span>提及 ${fmt(c.mention_count)} 块</span><span>1-hop</span></div>`, e.clientX, e.clientY);
+  } else if (eEl) {
+    const ed = edgeByKey.get(eEl.dataset.key);
+    const a = char(ed.source_id), b = char(ed.target_id);
+    showTooltip(`<span class="tt-title">${a.name} → ${b.name}</span><div class="tt-edge"><span class="tt-dot" style="background:var(--rel-${ed.type})"></span>${TYPE_LABEL[ed.type]}</div><div class="tt-meta"><span>weight ${ed.weight}</span><span>conf ${ed.confidence.toFixed(2)}</span><span>证据 ${ed.evidence.length} 条</span></div>`, e.clientX, e.clientY);
+  } else {
+    hideTooltip();
+  }
+});
+
+svg.addEventListener("click", (e) => {
+  const nEl = e.target.closest(".graph-node");
+  const eEl = e.target.closest(".graph-edge, .edge-hit");
+  if (nEl) {
+    const id = nEl.dataset.id;
+    if (id !== centerId) setCenter(id);
+  } else if (eEl) {
+    selectEdge(edgeByKey.get(eEl.dataset.key));
+  } else {
+    deselectEdge();
+  }
+});
+
+function setCenter(id){
+  centerId = id;
+  selectedKey = null;
+  deselectEdge(false);
+  try { localStorage.setItem("wb-center", id); } catch {}
+  const c = char(id);
+  const overlay = $("#graphLoading");
+  overlay.hidden = false;
+  setTimeout(() => {
+    renderGraph();
+    overlay.hidden = true;
+    toast(`已将「${c.name}」设为中心人物`, "info");
+  }, 320);
+}
+
+/* ═══════════ 右侧关系详情 ═══════════ */
+const detailsEmpty = $("#detailsEmpty");
+const detailsContent = $("#detailsContent");
+const btnCloseDetail = $("#btnCloseDetail");
+
+function selectEdge(e){
+  selectedKey = edgeKey(e);
+  const a = char(e.source_id), b = char(e.target_id);
+  document.querySelectorAll("[data-key='" + selectedKey + "']").forEach(el => {
+    if (el.classList.contains("graph-edge")) el.classList.add("is-selected");
+    else if (el.classList.contains("edge-label-pill")) el.classList.add("is-selected");
+  });
+  svg.classList.add("has-selection");
+  const conf = Math.round(e.confidence * 100);
+  const meter = [10, 30, 50, 70, 90].map(t => `<i class="${conf >= t ? "on" : ""}"></i>`).join("");
+  const evItems = e.evidence.map(ev => `
+    <div class="evidence-item">
+      <div class="evidence-ref"><span class="chapter-no">第 ${ev.chapter_id} 章</span><span>${ev.chapter_title}</span></div>
+      <p class="evidence-text">${ev.text}</p>
+    </div>`).join("");
+  detailsContent.innerHTML = `
+    <div class="rel-summary">
+      <div class="rs-endpoint"><span class="rs-name">${a.name}</span><span class="rs-sub">${fmt(a.mention_count)} 提及</span></div>
+      <span class="rel-badge" data-type="${e.type}"><span class="swatch" data-type="${e.type}"></span>${TYPE_LABEL[e.type]}</span>
+      <div class="rs-endpoint" style="text-align:right"><span class="rs-name">${b.name}</span><span class="rs-sub">${fmt(b.mention_count)} 提及</span></div>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-cell"><span class="mc-label">关系类型</span><span class="mc-value" style="font-family:var(--font-body);font-weight:600">${TYPE_LABEL[e.type]}</span></div>
+      <div class="meta-cell"><span class="mc-label">置信度</span><span class="mc-value"><span class="num">${(e.confidence * 100).toFixed(0)}</span><span class="mc-unit">%</span><span class="conf-meter">${meter}</span></span></div>
+      <div class="meta-cell"><span class="mc-label">权重</span><span class="mc-value num">${e.weight}</span></div>
+      <div class="meta-cell"><span class="mc-label">证据</span><span class="mc-value"><span class="num">${e.evidence.length}</span><span class="mc-unit"> 条</span></span></div>
+    </div>
+    <div>
+      <div class="ev-head"><span class="section-title">原文证据</span><span class="ev-count num">${e.evidence.length} 条</span></div>
+      <div style="margin-top:4px">${evItems}</div>
+    </div>`;
+  detailsEmpty.hidden = true;
+  detailsContent.hidden = false;
+  btnCloseDetail.hidden = false;
+}
+
+function deselectEdge(silent){
+  selectedKey = null;
+  svg.classList.remove("has-selection");
+  document.querySelectorAll(".graph-edge.is-selected, .edge-label-pill.is-selected").forEach(el => el.classList.remove("is-selected"));
+  if (!silent) {
+    detailsEmpty.hidden = false;
+    detailsContent.hidden = true;
+    btnCloseDetail.hidden = true;
+  }
+}
+btnCloseDetail.addEventListener("click", () => deselectEdge(false));
+
+/* ═══════════ 缩放 ═══════════ */
+$("#btnZoomIn").addEventListener("click", () => { zoom *= 1.25; applyZoom(); });
+$("#btnZoomOut").addEventListener("click", () => { zoom /= 1.25; applyZoom(); });
+$("#btnFit").addEventListener("click", () => { zoom = 1; applyZoom(); });
+
+/* ═══════════ 人物搜索 ═══════════ */
+const searchInput = $("#searchInput");
+const suggest = $("#suggest");
+const searchClear = $("#searchClear");
+let searchTimer = null;
+
+function highlight(name, q){
+  const i = name.indexOf(q);
+  if (i < 0) return name;
+  return name.slice(0, i) + `<span class="sr-hl">${name.slice(i, i + q.length)}</span>` + name.slice(i + q.length);
+}
+
+function runSearch(){
+  const q = searchInput.value.trim();
+  searchClear.hidden = !q;
+  if (!q) { suggest.hidden = true; return; }
+  const list = CHARACTERS.filter(c => c.name.includes(q)).slice(0, 8);
+  if (!list.length) {
+    suggest.innerHTML = `<div class="suggest-empty">没有匹配的人物，试试 黛玉 / 凤姐 / 贾母</div>`;
+    suggest.hidden = false;
+    return;
+  }
+  suggest.innerHTML = `<div class="suggest-head">联想结果 · ${list.length} 位人物</div>` +
+    list.map(c => `
+      <button class="suggest-row" data-id="${c.id}">
+        <span class="sr-name">${highlight(c.name, q)}</span>
+        <span class="sr-meta"><span>提及</span><span>${fmt(c.mention_count)}</span>
+          <svg class="sr-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+        </span>
+      </button>`).join("");
+  suggest.hidden = false;
+}
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 250);
+});
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { suggest.hidden = true; searchInput.blur(); }
+});
+suggest.addEventListener("click", (e) => {
+  const row = e.target.closest(".suggest-row");
+  if (!row) return;
+  searchInput.value = "";
+  searchClear.hidden = true;
+  suggest.hidden = true;
+  setCenter(row.dataset.id);
+});
+searchClear.addEventListener("click", () => {
+  searchInput.value = "";
+  searchClear.hidden = true;
+  suggest.hidden = true;
+  searchInput.focus();
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".search")) suggest.hidden = true;
+});
+
+/* ═══════════ Toast ═══════════ */
+let toastTimer = null;
+function toast(msg, kind){
+  const t = $("#toast");
+  $("#toastText").textContent = msg;
+  t.classList.toggle("is-info", kind === "info");
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+/* ═══════════ 上传抽屉 ═══════════ */
+const overlay = $("#uploadOverlay");
+const fileInput = $("#fileInput");
+const dropzone = $("#dropzone");
+const fileRow = $("#fileRow");
+const fileName = $("#fileName");
+const fileMeta = $("#fileMeta");
+const btnStart = $("#btnStartAnalyze");
+const uploadError = $("#uploadError");
+let pendingFile = null;
+
+function openDrawer(){
+  overlay.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+function closeDrawer(){
+  overlay.hidden = true;
+  document.body.style.overflow = "";
+}
+$("#btnUpload").addEventListener("click", openDrawer);
+$("#btnCloseDrawer").addEventListener("click", closeDrawer);
+$("#btnCancelUpload").addEventListener("click", closeDrawer);
+overlay.addEventListener("click", (e) => { if (e.target === overlay) closeDrawer(); });
+
+function setFile(f){
+  pendingFile = f;
+  uploadError.hidden = true;
+  if (!f) { fileRow.hidden = true; btnStart.disabled = true; return; }
+  if (!f.name.toLowerCase().endsWith(".epub")) {
+    uploadError.innerHTML = `<div class="error-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5m0 3.5v.01"/></svg><div><strong style="font-weight:600">文件格式不支持</strong><div style="margin-top:2px">仅支持 .epub 文件。</div></div></div>`;
+    uploadError.hidden = false;
+    fileRow.hidden = true;
+    btnStart.disabled = true;
+    return;
+  }
+  fileRow.hidden = false;
+  fileName.textContent = f.name;
+  fileMeta.textContent = `${(f.size / 1048576).toFixed(1)} MB · 已就绪`;
+  btnStart.disabled = false;
+}
+dropzone.addEventListener("click", () => fileInput.click());
+dropzone.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+dropzone.addEventListener("dragover", (e) => e.preventDefault());
+dropzone.addEventListener("drop", (e) => { e.preventDefault(); setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+$("#btnRemoveFile").addEventListener("click", () => { pendingFile = null; fileInput.value = ""; setFile(null); });
+
+btnStart.addEventListener("click", () => {
+  if (!pendingFile) return;
+  closeDrawer();
+  startProcessing(pendingFile.name.replace(/\.epub$/i, ""));
+});
+
+/* ═══════════ 分析流程（模拟） ═══════════ */
+const TOTAL_CHUNKS = 1284;
+function startProcessing(title){
+  phase = "processing";
+  selectedKey = null;
+  deselectEdge(true);
+
+  /* 顶栏状态 */
+  const badge = $("#topStatusBadge");
+  badge.className = "badge badge-warning badge-running";
+  badge.innerHTML = `<span class="dot"></span>分析中`;
+  $("#metaStatusText").textContent = "分析中";
+  $("#topNovelTitle").textContent = title;
+
+  /* 左侧：显示进度卡 */
+  $("#progressCardWrap").hidden = false;
+  $("#statsSection").hidden = true;
+  $("#novelName").textContent = title;
+  $("#procTitle").textContent = `正在分析《${title}》`;
+  $("#graphProcessing").hidden = false;
+  $("#graphSvg").style.visibility = "hidden";
+  $("#graphHint").style.display = "none";
+  $("#detailsEmpty").querySelector(".empty-desc").textContent = "分析完成后，可搜索人物并查看关系网络。";
+
+  let done = 0;
+  $("#procNums").textContent = `0 / ${fmt(TOTAL_CHUNKS)} 块 · 0%`;
+  $("#procBar").style.width = "0%";
+  $("#pcNums").textContent = `0 / ${fmt(TOTAL_CHUNKS)} 块`;
+  $("#pcBar").style.width = "0%";
+
+  clearInterval(jobTimer);
+  jobTimer = setInterval(() => {
+    done = Math.min(TOTAL_CHUNKS, done + Math.round(90 + Math.random() * 130));
+    const pct = Math.round((done / TOTAL_CHUNKS) * 100);
+    $("#procNums").textContent = `${fmt(done)} / ${fmt(TOTAL_CHUNKS)} 块 · ${pct}%`;
+    $("#procBar").style.width = pct + "%";
+    $("#pcNums").textContent = `${fmt(done)} / ${fmt(TOTAL_CHUNKS)} 块`;
+    $("#pcBar").style.width = pct + "%";
+    if (done >= TOTAL_CHUNKS) {
+      clearInterval(jobTimer);
+      finishProcessing(title);
+    }
+  }, 300);
+}
+
+function finishProcessing(title){
+  phase = "graph";
+  const badge = $("#topStatusBadge");
+  badge.className = "badge badge-success";
+  badge.innerHTML = `<span class="dot"></span>分析完成`;
+  $("#metaStatusText").textContent = "已完成";
+  $("#progressCardWrap").hidden = true;
+  $("#statsSection").hidden = false;
+  $("#graphProcessing").hidden = true;
+  $("#graphSvg").style.visibility = "";
+  $("#graphHint").style.display = "";
+  $("#detailsEmpty").querySelector(".empty-desc").textContent = "点击关系图中的任意连线，查看关系详情与原文证据。";
+  renderGraph();
+  toast(`分析完成 · 人物 ${CHARACTERS.length} · 关系 ${EDGES.length}`);
+}
+
+/* ═══════════ 初始化 ═══════════ */
+(function init(){
+  try {
+    const saved = localStorage.getItem("wb-center");
+    if (saved && char(saved)) centerId = saved;
+  } catch {}
+  renderGraph();
+  $("#progressCardWrap").hidden = true;
+})();
+</script>
+</body>
+</html>

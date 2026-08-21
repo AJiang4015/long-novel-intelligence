@@ -1,3 +1,4 @@
+/** ErrorBanner.tsx —— 错误提示条（警告图标 + 标题 + 说明） */
 import { WarningIcon } from "./icons";
 
 interface ErrorBannerProps {

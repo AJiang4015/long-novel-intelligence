@@ -1,0 +1,1 @@
+"""HTTP API 路由包：包含 novels（小说 ingestion/查询）、jobs（任务进度）、characters（人物/图）、health（健康检查）子模块。"""

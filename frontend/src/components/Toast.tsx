@@ -1,3 +1,4 @@
+/** Toast.tsx —— 轻提示组件（底部居中的临时浮层） */
 interface ToastProps {
   message: string | null;
   /** info = 强调色圆点（如切换中心）；success = 绿色圆点（默认） */

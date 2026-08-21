@@ -13,6 +13,7 @@ from app.pipeline.llm_client import LLMClient
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """生命周期钩子：启动时初始化全局依赖（配置/DB/LLM/JobStore），关闭时释放 DB 连接。"""
     try:
         settings = get_settings()
     except ValidationError as exc:

@@ -20,4 +20,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """全局唯一配置实例（lru_cache 保证只从 .env 加载一次）。"""
     return Settings()

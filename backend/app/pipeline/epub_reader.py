@@ -16,6 +16,7 @@ class Chapter:
 
 
 def _strip_html(html: str) -> str:
+    """去除 HTML 标签并还原常见 HTML 实体，返回去空行的纯文本。"""
     text = _TAG_RE.sub("", html)
     text = _ENTITY_RE.sub(lambda m: {
         "nbsp": " ", "amp": "&", "lt": "<", "gt": ">", "quot": '"',
