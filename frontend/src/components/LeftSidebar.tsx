@@ -35,7 +35,14 @@ export default function LeftSidebar({
   graph,
   onSelectCharacter,
 }: LeftSidebarProps) {
-  const statusText = job ? STATUS_TEXT[job.status] : phase === "processing" ? "分析中" : "未分析";
+  // 恢复场景（job=null 但有 novel）显示「已完成」；处理中显示「分析中」
+  const statusText = job
+    ? STATUS_TEXT[job.status]
+    : phase === "processing"
+      ? "分析中"
+      : novel
+        ? "已完成"
+        : "未分析";
 
   const pct =
     job && job.progress.total_chunks > 0
@@ -94,11 +101,13 @@ export default function LeftSidebar({
           </div>
           <div className="stats-grid">
             <div className="stat-cell">
-              <span className="stat-value num">{v(job?.stats?.persons)}</span>
+              <span className="stat-value num">{v(job?.stats?.persons ?? novel?.stats?.persons)}</span>
               <span className="stat-label">人物</span>
             </div>
             <div className="stat-cell">
-              <span className="stat-value num">{v(job?.stats?.relationships)}</span>
+              <span className="stat-value num">
+                {v(job?.stats?.relationships ?? novel?.stats?.relationships)}
+              </span>
               <span className="stat-label">关系</span>
             </div>
             <div className="stat-cell">

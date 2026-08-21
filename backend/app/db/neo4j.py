@@ -70,6 +70,14 @@ class Neo4jDB:
             chapters = json.loads(record["chapters"]) if record["chapters"] else []
             return {"id": novel_id, "title": record["title"], "chapters": chapters}
 
+    def list_novels(self) -> list[dict]:
+        """列出全部小说（按 title 排序，确定性；不依赖 internal id / 创建时间）。"""
+        with self._driver.session() as session:
+            records = session.run(
+                "MATCH (n:Novel) RETURN n.id AS id, n.title AS title ORDER BY n.title"
+            )
+            return [{"id": r["id"], "title": r["title"]} for r in records]
+
     def search_characters(self, novel_id: str, q: str, limit: int = 10) -> list[dict]:
         with self._driver.session() as session:
             records = session.run(

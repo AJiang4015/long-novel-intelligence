@@ -1,5 +1,5 @@
 /** API 层：封装后端接口调用（上传/任务/小说/人物搜索/图谱） */
-import type { CharacterCandidate, GraphResponse, JobResponse, NovelResponse } from "./types";
+import type { CharacterCandidate, GraphResponse, JobResponse, NovelListItem, NovelResponse } from "./types";
 
 /** 统一响应处理：非 2xx 抛错（优先取后端 detail 字段），成功解析 JSON */
 async function handle<T>(resp: Response | Promise<Response>): Promise<T> {
@@ -26,6 +26,11 @@ export function getJob(jobId: string): Promise<JobResponse> {
 /** 查询小说基本信息（标题/章节/统计） */
 export function getNovel(novelId: string): Promise<NovelResponse> {
   return handle(fetch(`/api/novels/${novelId}`));
+}
+
+/** 列出全部已有小说（启动恢复探测用） */
+export function listNovels(): Promise<NovelListItem[]> {
+  return handle(fetch("/api/novels"));
 }
 
 /** 按关键词搜索小说内的人物 */

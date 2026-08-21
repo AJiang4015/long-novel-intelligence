@@ -181,3 +181,30 @@ def test_unknown_job_404(client):
 
 def test_health_ok(client):
     assert client.get("/api/health").json()["status"] == "ok"
+
+
+def test_list_novels_empty(client):
+    """清空小说后 GET /api/novels 返回空数组。"""
+    db = client.app.state.db
+    with db._driver.session() as session:
+        session.run("MATCH (n:Novel) DELETE n").consume()
+    assert client.get("/api/novels").json() == []
+
+
+def test_list_novels_returns_sorted(client):
+    """多本小说时 GET /api/novels 返回全部并按 title 升序（不依赖 internal id）。"""
+    db = client.app.state.db
+    nids = []
+    try:
+        for i, title in enumerate(["Novel-B", "Novel-A", "Novel-C"], start=1):
+            nid = f"list-{uuid.uuid4()}"
+            db.upsert_novel(nid, title, [{"id": i, "title": f"第{i}章"}])
+            nids.append(nid)
+        novels = client.get("/api/novels").json()
+        ours = [n for n in novels if n["id"] in nids]
+        assert len(ours) == 3
+        assert [n["title"] for n in ours] == sorted(["Novel-B", "Novel-A", "Novel-C"])
+        assert all("id" in n and "title" in n for n in ours)
+    finally:
+        for nid in nids:
+            db.delete_novel(nid)

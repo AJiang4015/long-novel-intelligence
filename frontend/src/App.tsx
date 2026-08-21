@@ -16,15 +16,17 @@ import LeftSidebar from "./components/LeftSidebar";
 import GraphPanel from "./components/GraphPanel";
 import DetailsPanel from "./components/DetailsPanel";
 import UploadDrawer from "./components/UploadDrawer";
+import ExistingNovelPicker from "./components/ExistingNovelPicker";
 import Toast from "./components/Toast";
 import ErrorBanner from "./components/ErrorBanner";
-import { getGraph, getJob, getNovel } from "./api";
+import { getGraph, getJob, getNovel, listNovels } from "./api";
 import type {
   CharacterCandidate,
   GraphEdge,
   GraphResponse,
   JobResponse,
   JobStatus,
+  NovelListItem,
   NovelResponse,
 } from "./types";
 
@@ -57,6 +59,8 @@ export default function App() {
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [existingNovels, setExistingNovels] = useState<NovelListItem[]>([]);
   const [graphLoading, setGraphLoading] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -65,10 +69,56 @@ export default function App() {
   const status: JobStatus | null =
     phase === "processing" ? (job?.status ?? null) : novel ? "completed" : null;
 
-  /** 首次挂载自动弹出上传抽屉（empty 阶段引导） */
+  /**
+   * 启动探测：恢复已有小说（spec 三分支）——
+   * 0 本 → 空态 + 自动弹上传抽屉；1 本 → 自动恢复；多本 → 打开选择器。
+   * listNovels 失败 → 静默回退空态 + 抽屉，console.warn 保留诊断日志（Neo4j/API 排查）。
+   */
   useEffect(() => {
-    setDrawerOpen(true);
+    let cancelled = false;
+    listNovels()
+      .then((list) => {
+        if (cancelled) return;
+        if (list.length === 0) {
+          setDrawerOpen(true);
+        } else if (list.length === 1) {
+          void loadNovel(list[0]);
+        } else {
+          setExistingNovels(list);
+          setPickerOpen(true);
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn("[novel-recovery] listNovels 失败，回退空态（检查后端/Neo4j 是否可用）：", err);
+        setDrawerOpen(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * 恢复已有小说：getNovel 填详情 → phase=graph → 复用 restoreCenter。
+   * 无 wb-center:{novel_id} 时 center 保持 null → GraphPanel「选择人物」空态，不弹 UploadDrawer（约束 1）。
+   */
+  async function loadNovel(item: NovelListItem) {
+    setPickerOpen(false);
+    setDrawerOpen(false);
+    setJob(null);
+    setGraph(null);
+    setSelectedEdge(null);
+    try {
+      const n = await getNovel(item.id);
+      setNovel(n);
+    } catch (err) {
+      console.warn("[novel-recovery] getNovel 失败：", err);
+      setNovel(null);
+    }
+    restoreCenter(item.id);
+    setPhase("graph");
+  }
 
   /** 卸载时清理 toast 计时器 */
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
@@ -245,6 +295,12 @@ export default function App() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onUploaded={handleUploaded}
+      />
+      <ExistingNovelPicker
+        open={pickerOpen}
+        novels={existingNovels}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(item) => void loadNovel(item)}
       />
       <Toast message={toast?.msg ?? null} kind={toast?.kind ?? "success"} />
     </>

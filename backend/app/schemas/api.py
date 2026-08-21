@@ -8,6 +8,11 @@ class NovelCreateResponse(BaseModel):
     job_id: str
 
 
+class NovelListItem(BaseModel):
+    id: str
+    title: str
+
+
 class JobProgress(BaseModel):
     done_chunks: int
     total_chunks: int

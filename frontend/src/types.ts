@@ -34,6 +34,12 @@ export interface NovelResponse {
   stats: Record<string, number>;
 }
 
+/** 已有小说列表项（启动恢复用）：仅 id + title */
+export interface NovelListItem {
+  id: string;
+  title: string;
+}
+
 /** 人物候选：搜索/中心人物通用结构（含提及次数） */
 export interface CharacterCandidate {
   id: string;

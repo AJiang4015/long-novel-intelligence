@@ -11,7 +11,7 @@ from app.pipeline.epub_reader import read_epub
 from app.pipeline.extractor import extract_all
 from app.pipeline.llm_client import LLMClient
 from app.pipeline.merger import merge_extractions
-from app.schemas.api import NovelCreateResponse, NovelResponse
+from app.schemas.api import NovelCreateResponse, NovelListItem, NovelResponse
 
 router = APIRouter(prefix="/api/novels", tags=["novels"])
 
@@ -78,6 +78,12 @@ async def create_novel(request: Request, background_tasks: BackgroundTasks,
         request.app.state.settings, db, job_store, request.app.state.llm_client,
     )
     return NovelCreateResponse(novel_id=novel_id, job_id=job_id)
+
+
+@router.get("", response_model=list[NovelListItem])
+def list_novels(request: Request) -> list[NovelListItem]:
+    db: Neo4jDB = request.app.state.db
+    return db.list_novels()
 
 
 @router.get("/{novel_id}", response_model=NovelResponse)
