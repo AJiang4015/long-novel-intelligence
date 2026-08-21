@@ -29,7 +29,14 @@ class EntityResolver:
         pending: list[PendingMention] = []
         resolved_chars: list = []
         resolved_rels: list = []
-        confirmed: set[str] = set()  # 本 chunk 已确认的 canonical（同 chunk 共现召回源）
+        # 预扫描：本 chunk 全部名字（characters + 关系端点）中已在 known 的 → 预置为共现源。
+        # 消除同 chunk 共现召回的顺序敏感性：未知 mention 无论出现在已知名前/后，都能召回它。
+        chunk_names = (
+            {c.name for c in result.characters}
+            | {r.source for r in result.relationships}
+            | {r.target for r in result.relationships}
+        )
+        confirmed: set[str] = {self.known[n] for n in chunk_names if n in self.known}
 
         def do_name(name: str) -> str:
             canonical, needs_judge = self._resolve_name(name, confirmed)

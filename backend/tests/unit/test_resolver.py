@@ -179,3 +179,38 @@ def test_cooccurrence_new_canonical_also_feeds_later_names():
     out, _ = r.resolve(make_chunk(1, text="二老和傩送同在一处"), extraction(["傩送", "二老"]))
     assert [c.name for c in out.characters] == ["傩送", "傩送"]
     assert r.canonical_aliases["傩送"] == ["二老"]
+
+
+def test_cooccurrence_unknown_first_still_recalls_known():
+    """顺序敏感性修复：[二老, 傩送] 未知在前，预扫描后 二老 仍能召回 傩送 并经 judge 合并。"""
+    # 饱和 top-5：7 个 canonical 使「老」字重叠占满字符候选（傩送 零重叠会被挤出，全靠共现）
+    seed = ["傩送", "大老", "老人", "老船夫", "老马兵", "老道士", "老婆子"]
+    j = _Judge({"二老": "傩送"})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1, "A"), extraction(seed))
+    out, _ = r.resolve(make_chunk(2, "B"), extraction(["二老", "傩送"]))  # 未知在前
+    assert [c.name for c in out.characters] == ["傩送", "傩送"]
+    assert "二老" in r.canonical_aliases["傩送"]
+
+
+def test_cooccurrence_candidates_identical_both_orders():
+    """两种顺序（二老先/后）下 二老 的候选集合一致，且都含 傩送。"""
+    def build(chunk2_names):
+        seen: dict = {}
+
+        def recorder(text, pending):
+            seen["cands"] = [[c.canonical for c in p.candidates] for p in pending]
+            return AliasJudgeResult.model_validate(
+                {"resolutions": [{"mention": p.mention, "resolves_to": None} for p in pending]})
+
+        r = EntityResolver(judge=recorder)
+        r.resolve(make_chunk(1, "A"), extraction(["傩送", "大老", "老人", "老船夫", "老马兵", "老道士", "老婆子"]))
+        seen.clear()
+        r.resolve(make_chunk(2, "B"), extraction(chunk2_names))
+        return seen.get("cands")
+
+    cands_unknown_first = build(["二老", "傩送"])
+    cands_known_first = build(["傩送", "二老"])
+    assert cands_unknown_first is not None and cands_known_first is not None
+    assert cands_unknown_first[0] == cands_known_first[0]
+    assert "傩送" in cands_unknown_first[0]
