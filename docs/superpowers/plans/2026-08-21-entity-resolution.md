@@ -274,13 +274,12 @@ def test_new_name_no_candidate_is_new_canonical_no_llm():
 
 
 def test_one_judge_call_per_chunk():
-    j = _Judge({"二老": "傩送"})
+    """每 chunk 至多一次 judge：一个 chunk 内多个未知 mention 批量判定（known 整本持续，已确认的别名不再进 pending）。"""
+    j = _Judge({"傩二": "傩送", "二送": "傩送"})
     r = EntityResolver(judge=j)
     r.resolve(make_chunk(1, text="傩送是哥哥"), extraction(["傩送"]))
-    r.resolve(make_chunk(2, text="二老来了"), extraction(["二老"]))
-    out, failed = r.resolve(make_chunk(3, text="二老和傩送"), extraction(["二老", "傩送"]))
-    # chunk3 中「二老」未知→pending；「傩送」已知→直接命中
-    assert j.calls == 2  # chunk2 一次 + chunk3 一次
+    out, failed = r.resolve(make_chunk(2, text="傩二和二送都来了"), extraction(["傩二", "二送"]))
+    assert j.calls == 1  # 两个未知 mention 一次批量判定
     assert [c.name for c in out.characters] == ["傩送", "傩送"]
 
 
@@ -294,12 +293,16 @@ def test_judged_alias_points_to_existing_canonical():
 
 
 def test_judge_null_creates_new_canonical_no_second_round():
+    """判 null → 新 canonical；再次出现缓存命中，不做第二轮。"""
     j = _Judge({"李四": None})
     r = EntityResolver(judge=j)
-    r.resolve(make_chunk(1), extraction(["张三", "王五"]))
+    r.resolve(make_chunk(1), extraction(["李三"]))
     out, _ = r.resolve(make_chunk(2), extraction(["李四"]))
     assert out.characters[0].name == "李四"
-    assert j.calls == 1  # 不二轮
+    assert j.calls == 1
+    out2, _ = r.resolve(make_chunk(3), extraction(["李四"]))
+    assert out2.characters[0].name == "李四"
+    assert j.calls == 1  # 缓存命中，不二轮
 
 
 def test_judge_validation_failure_isolates_and_records():
@@ -307,10 +310,11 @@ def test_judge_validation_failure_isolates_and_records():
         raise ValueError("judge boom")
 
     r = EntityResolver(judge=failing_judge)
-    out, failed = r.resolve(make_chunk(5, chapter_id=2), extraction(["二老"]))
+    r.resolve(make_chunk(1), extraction(["大老"]))  # seed canonical
+    out, failed = r.resolve(make_chunk(5, chapter_id=2), extraction(["二老"]))  # 召回大老 → 判定失败
     assert out.characters[0].name == "二老"  # 独立 canonical
     assert failed is True
-    assert r.canonical_aliases == {"二老": []}
+    assert r.canonical_aliases == {"大老": [], "二老": []}
 
 
 def test_aliases_deduped_ordered_exclude_canonical():
@@ -504,7 +508,7 @@ class EntityResolver:
 
 > 说明：`do_name` 对 pending mention 先返回原名字，判定后统一替换；`_recall` 的 index 中 matched_names 用 `sorted` 仅为稳定输入给 LLM（aliases 顺序仍由 `canonical_aliases` 的追加序保证）。
 
-- [ ] **Step 4: 运行确认通过**：7 passed
+- [ ] **Step 4: 运行确认通过**：8 passed
 - [ ] **Step 5: Commit**：`git add backend/app/pipeline/resolver.py backend/tests/unit/test_resolver.py` → `git commit -m "feat: EntityResolver（整本生命周期/批量判定/canonical 首次出现规则）"`
 
 ---
