@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.llm import AliasJudgeResult, ExtractionResult, RelationshipType
+from app.schemas.llm import AliasJudgeResult, ExtractionResult, PendingMention, RelationshipType
 
 
 def test_extraction_result_valid():
@@ -188,3 +188,29 @@ def test_alias_judge_duplicate_mention_deduped():
     })
     assert len(r.resolutions) == 1
     assert r.resolutions[0].resolves_to == "傩送"
+
+
+def test_judge_aliases_parses_result():
+    client = make_client([fake_response(200, {"choices": [{"message": {"content": (
+        '{"resolutions": [{"mention": "二老", "resolves_to": "傩送"}]}'
+    )}}]})])
+    pending = [PendingMention.model_validate({
+        "mention": "二老",
+        "candidates": [{"canonical": "傩送", "matched_names": ["傩送", "二老"]}],
+    })]
+    result = client.judge_aliases("文本", pending)
+    assert isinstance(result, AliasJudgeResult)
+    assert result.resolutions[0].resolves_to == "傩送"
+
+
+def test_judge_aliases_bad_json_is_validation_error():
+    client = make_client([fake_response(200, {"choices": [{"message": {"content": "不是JSON"}}]})])
+    with pytest.raises(Exception) as exc:
+        client.judge_aliases("文本", [])
+    assert "validation_error" in str(exc.value)
+
+
+def test_judge_aliases_retryable_429():
+    client = make_client([fake_response(429), fake_response(200, {"choices": [{"message": {"content": '{"resolutions": []}'}}]})])
+    client.judge_aliases("文本", [])
+    assert client._client.calls == 2

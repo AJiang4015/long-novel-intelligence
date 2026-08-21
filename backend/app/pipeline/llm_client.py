@@ -1,3 +1,6 @@
+import json
+import time
+
 import httpx
 from pydantic import ValidationError
 
@@ -14,6 +17,21 @@ EXTRACTION_SYSTEM_PROMPT = """你是小说人物关系抽取器。给定一段�
 {"characters": [{"name": "..."}], "relationships": [{"source": "...", "target": "...", "type": "love", "confidence": 0.9}]}"""
 
 EXTRACTION_USER_PROMPT = "请抽取以下文本中的人物与关系：\n\n{text}"
+
+ALIAS_JUDGE_SYSTEM_PROMPT = """你是小说人物实体消歧判定器。给定一段小说文本与若干「待判定的人物名及其候选人物」，判断每个待判定名字是否与某个候选人物是同一人。
+严格要求：
+1. 只依据提供的文本与候选信息判断，不要使用任何外部小说知识。
+2. 每个 mention 最多输出一条 resolution；resolves_to 只能是该 mention 的候选之一，或 null（表示不是任何候选）。
+3. 禁止创造输入之外的新人物名；不得修改 mention 本身。
+4. 只输出 JSON：{"resolutions": [{"mention": "...", "resolves_to": "..."}]}"""
+
+ALIAS_JUDGE_USER_PROMPT = """小说文本：
+{text}
+
+待判定人物（含候选）：
+{mentions}
+
+请输出判定结果。"""
 
 
 class LLMError(Exception):
@@ -62,3 +80,43 @@ class LLMClient:
             return ExtractionResult.model_validate_json(content)
         except ValidationError as exc:
             raise LLMValidationError("validation_error") from exc
+
+    def judge_aliases(self, chunk_text: str, pending: list["PendingMention"]) -> "AliasJudgeResult":
+        """批量判定别名。429/5xx 重试 1 次；validation error 不重试（沿用 extract_one 的失败分类模式）。"""
+        from app.schemas.llm import AliasJudgeResult
+        mentions_json = json.dumps(
+            [{"mention": p.mention,
+              "candidates": [{"canonical": c.canonical, "matched_names": c.matched_names}
+                             for c in p.candidates]}
+             for p in pending],
+            ensure_ascii=False,
+        )
+        for attempt in range(2):  # 首次 + 重试 1 次
+            response = self._client.post(
+                f"{self._base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={
+                    "model": self._model,
+                    "messages": [
+                        {"role": "system", "content": ALIAS_JUDGE_SYSTEM_PROMPT},
+                        {"role": "user", "content": ALIAS_JUDGE_USER_PROMPT.format(text=chunk_text, mentions=mentions_json)},
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.1,
+                },
+            )
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt == 0:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise LLMRetryableError(f"http_{response.status_code}")
+            if response.status_code >= 400:
+                raise LLMError(f"http_{response.status_code}")
+            try:
+                content = response.json()["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, ValueError) as exc:
+                raise LLMValidationError("invalid_response_shape") from exc
+            try:
+                return AliasJudgeResult.model_validate_json(content)
+            except ValidationError as exc:
+                raise LLMValidationError("validation_error") from exc
