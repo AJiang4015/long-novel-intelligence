@@ -291,3 +291,66 @@ def test_text_candidates_priority_and_topk_merge():
     assert cands[:2] == ["傩送", "天保"]
     assert len(cands) <= 5
     assert len(set(cands)) == len(cands)
+
+
+# ═══════════ V0.2.3-a strong/weak 候选容量（强信号永不挤掉）═══════════
+
+def test_strong_3_weak_fills_to_5():
+    """strong=3（extraction 2 + text 1）→ weak 补 2 个，最终 5。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    r.resolve(make_chunk(1, "A"),
+              extraction(["傩送", "大老", "天保", "老人", "老船夫", "老马兵", "老道士"]))
+    seen.clear()
+    # 提取 傩送/大老（extraction confirmed=2）；原文含 天保（text confirmed=1）→ strong=3
+    r.resolve(make_chunk(2, text="天保在河边"), extraction(["傩送", "大老", "二老"]))
+    cands = seen["cands"][0]
+    assert set(cands[:2]) == {"傩送", "大老"}   # extraction 层（顺序不定，集合断言）
+    assert cands[2] == "天保"                    # text 层紧随其后
+    assert len(cands) == 5                       # weak 补 2 个
+    assert len(set(cands)) == len(cands)         # 无重复
+
+
+def test_strong_5_no_weak():
+    """strong=5 → weak 不补，最终 5。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    r.resolve(make_chunk(1, "A"),
+              extraction(["傩送", "大老", "天保", "老人", "老船夫"]))
+    seen.clear()
+    # 提取 5 个已知 → extraction confirmed=5 → strong=5，weak 无剩余容量
+    r.resolve(make_chunk(2, text="一个完全不同的段落"),
+              extraction(["傩送", "大老", "天保", "老人", "老船夫", "二老"]))
+    cands = seen["cands"][0]
+    assert len(cands) == 5
+    assert set(cands) == {"傩送", "大老", "天保", "老人", "老船夫"}
+
+
+def test_strong_7_not_truncated():
+    """strong=7 → 7 个全部保留，不截断（旧行为 `out[:5]` 会截到 5）。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    seed7 = ["傩送", "大老", "天保", "老人", "老船夫", "老马兵", "老道士"]
+    r.resolve(make_chunk(1, "A"), extraction(seed7))
+    seen.clear()
+    r.resolve(make_chunk(2, text="一个完全不同的段落"), extraction(seed7 + ["二老"]))
+    cands = seen["cands"][0]
+    assert len(cands) == 7
+    assert set(cands) == set(seed7)
+
+
+def test_bridge_mention_keeps_text_signal_when_extraction_full():
+    """V0.2.3-a 目标场景：extraction confirmed 已满 5 时，
+    text confirmed 的 天保 仍进入候选（天保大老 候选必含 天保 与 大老）。"""
+    seen: dict = {}
+    r = EntityResolver(judge=_recorder(seen))
+    r.resolve(make_chunk(1, "A"),
+              extraction(["大老", "老人", "老船夫", "老马兵", "老道士", "天保"]))
+    seen.clear()
+    # 提取 5 个已知（无 天保）→ extraction confirmed=5 占满；原文含 天保 → text confirmed=天保
+    r.resolve(make_chunk(2, text="天保大老在河边"),
+              extraction(["大老", "老人", "老船夫", "老马兵", "老道士", "天保大老"]))
+    cands = seen["cands"][0]
+    assert "天保" in cands          # text 强信号未被 extraction 占满挤掉
+    assert "大老" in cands          # extraction 强信号在
+    assert len(cands) == 6          # strong=6（5 extraction + 1 text），weak=0
