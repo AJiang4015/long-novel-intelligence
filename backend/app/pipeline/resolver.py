@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from app.pipeline.chunker import Chunk
-from app.schemas.llm import AliasCandidate, AliasJudgeResult, ExtractionResult, PendingMention
+from app.schemas.llm import (AliasCandidate, AliasJudgeResult, ExtractionResult,
+                             MentionCategory, PendingMention)
 
 RECALL_TOP_K = 5
 
@@ -37,20 +38,30 @@ class EntityResolver:
     def resolve(self, chunk: Chunk, result: ExtractionResult) -> tuple[ExtractionResult, bool]:
         self._current_chunk_id = chunk.chunk_id
         self._current_chapter_id = chunk.chapter_id
+        # V0.2.4：本 chunk 提取的 category 映射（LLM 提供时；缺省 None）
+        self._current_categories: dict[str, MentionCategory] = {
+            c.name: c.category for c in result.characters if c.category is not None}
         pending: list[PendingMention] = []
         resolved_chars: list = []
         resolved_rels: list = []
+        # V0.2.4：硬过滤 COLLECTIVE/INVALID（不进候选源；relation endpoint 涉及则跳过该关系）
+        from app.pipeline.hygiene import is_hard_filtered
+        def _keep(name: str) -> bool:
+            return not is_hard_filtered(name)
         # 预扫描：本 chunk 全部名字（characters + 关系端点）中已在 known 的 → 预置为共现源。
         # 消除同 chunk 共现召回的顺序敏感性：未知 mention 无论出现在已知名前/后，都能召回它。
         chunk_names = (
-            {c.name for c in result.characters}
-            | {r.source for r in result.relationships}
-            | {r.target for r in result.relationships}
+            {c.name for c in result.characters if _keep(c.name)}
+            | {r.source for r in result.relationships if _keep(r.source)}
+            | {r.target for r in result.relationships if _keep(r.target)}
         )
         confirmed: set[str] = {self.known[n] for n in chunk_names if n in self.known}
+        # 排除硬过滤 canonical（防历史污染节点进入候选源）
+        confirmed = {c for c in confirmed if not is_hard_filtered(c)}
         # 文本层共现源（V0.2.2）：chunk 原文中出现的已知 canonical/alias → canonical。
         # 仅作候选信号，绝不直接认定同一人（仍须经 judge）。
         text_confirmed: set[str] = self._text_mentions(chunk.text)
+        text_confirmed = {c for c in text_confirmed if not is_hard_filtered(c)}
 
         def do_name(name: str) -> str:
             canonical, needs_judge = self._resolve_name(name, confirmed, text_confirmed)
@@ -133,16 +144,29 @@ class EntityResolver:
         return found
 
     def _resolve_name(self, name: str, confirmed: set[str], text_confirmed: set[str]) -> tuple[str, bool]:
+        from app.pipeline.hygiene import is_hard_filtered
         if name in self.known:
             canonical = self.known[name]
             confirmed.add(canonical)  # 已确认 → 成为后续同名 chunk 内共现候选源
             return canonical, False
+        # V0.2.4：硬过滤 mention 永不注册（防御：即使漏过 resolve 开头过滤）
+        if is_hard_filtered(name):
+            return name, False   # 不注册、不进 pending——原样返回（characters/关系保留原名，无害）
         candidates = self._recall(name, confirmed, text_confirmed)
+        # V0.2.4：category 决策（仅在 LLM 提供 category 时；None → legacy PERSON）
+        cat = self._category_of(name)
         if not candidates:
+            if cat == MentionCategory.GENERIC:
+                return name, False   # 丢弃，不注册 canonical
+            # PERSON / DESCRIPTIVE / COMPOSITE / None → 注册 canonical（兜底不静默丢人物）
             self._register(name)
             confirmed.add(name)
             return name, False
-        return name, True  # 进 pending，本 chunk 末统一判定
+        return name, True  # 进 pending（GENERIC/DESCRIPTIVE/COMPOSITE/PERSON 均可 judge）
+
+    def _category_of(self, name: str) -> MentionCategory | None:
+        """返回本 chunk 提取的 category（若有）；跨 chunk 不保留。"""
+        return self._current_categories.get(name)
 
     def _recall(self, mention: str, confirmed: set[str], text_confirmed: set[str]) -> list[AliasCandidate]:
         """候选召回（V0.2.3-a strong/weak 两段式）：
@@ -156,10 +180,16 @@ class EntityResolver:
         """
         out: list[AliasCandidate] = []
         seen: set[str] = set()
+        # V0.2.4：硬过滤 canonical 不得进入任何一层候选（防历史污染节点）
+        from app.pipeline.hygiene import is_hard_filtered
+        def _candidate_ok(canonical: str) -> bool:
+            return not is_hard_filtered(canonical)
 
         # 1) strong：extraction 共现候选（强，优先）
         for canonical in confirmed:
             if canonical == mention or canonical not in self._index or canonical in seen:
+                continue
+            if not _candidate_ok(canonical):
                 continue
             seen.add(canonical)
             out.append(AliasCandidate(
@@ -171,6 +201,8 @@ class EntityResolver:
         for canonical in text_confirmed:
             if canonical == mention or canonical not in self._index or canonical in seen:
                 continue
+            if not _candidate_ok(canonical):
+                continue
             seen.add(canonical)
             out.append(AliasCandidate(
                 canonical=canonical,
@@ -180,7 +212,7 @@ class EntityResolver:
         # 3) weak：字符重合 + 子串候选，只补足剩余容量；确定性 tie-break（不依赖 set/dict 顺序）
         scored: list[tuple[int, int, str]] = []
         for canonical, names in self._index.items():
-            if canonical in seen:
+            if canonical in seen or not _candidate_ok(canonical):
                 continue
             hit = None
             for n in names:
@@ -205,11 +237,16 @@ class EntityResolver:
     def _apply_judge(self, judge_result: AliasJudgeResult, pending: list[PendingMention]):
         valid_canonicals = {c.canonical for p in pending for c in p.candidates}
         valid_mentions = {p.mention for p in pending}
+        from app.pipeline.hygiene import is_hard_filtered
         for r in judge_result.resolutions:
             if r.mention not in valid_mentions:
                 continue  # 约束：mention 必须来自输入
             if r.resolves_to is not None and r.resolves_to not in valid_canonicals:
                 continue  # 约束：resolves_to 必须来自候选
+            if r.resolves_to is not None and is_hard_filtered(r.resolves_to):
+                continue  # V0.2.4 防御：不吸收硬过滤 canonical
+            if is_hard_filtered(r.mention):
+                continue  # V0.2.4 防御：被硬过滤 mention 的判定结果不写 known
             self.known[r.mention] = r.resolves_to if r.resolves_to is not None else r.mention
             if r.resolves_to is not None:
                 self._add_alias(r.resolves_to, r.mention)
@@ -219,6 +256,9 @@ class EntityResolver:
         judged = {r.mention for r in judge_result.resolutions}
         for p in pending:
             if p.mention not in judged:
+                # V0.2.4 防御：被硬过滤 mention 不得因防御路径注册
+                if is_hard_filtered(p.mention):
+                    continue
                 self._register(p.mention)
 
     def _register(self, name: str):
