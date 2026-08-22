@@ -67,7 +67,7 @@ import pytest
 from app.pipeline.chunker import Chunk
 from app.pipeline.extractor import FailedBlock, extract_all, extract_one
 from app.pipeline.llm_client import LLMClient
-from app.schemas.llm import ExtractionResult
+from app.schemas.llm import ExtractionResult, MentionCategory
 
 VALID_JSON = {
     "characters": [{"name": "贾宝玉"}, {"name": "林黛玉"}],
@@ -249,3 +249,15 @@ def test_judge_merges_retryable_429():
     client = make_client([fake_response(429), fake_response(200, {"choices": [{"message": {"content": '{"merges": []}'}}]})])
     client.judge_merges([])
     assert client._client.calls == 2
+
+
+def test_extract_chunk_parses_category():
+    """V0.2.4：extract 输出 category → 解析为 MentionCategory；缺省 → None。"""
+    client = make_client([fake_response(200, {"choices": [{"message": {"content": (
+        '{"characters": [{"name": "两个儿子", "category": "collective"}, {"name": "天保"}],'
+        '"relationships": []}'
+    )}}]})])
+    result = client.extract_chunk("文本")
+    assert result.characters[0].name == "两个儿子"
+    assert result.characters[0].category == MentionCategory.COLLECTIVE
+    assert result.characters[1].category is None   # 缺省 category 合法（向后兼容）

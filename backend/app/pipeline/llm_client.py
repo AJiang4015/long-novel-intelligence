@@ -16,8 +16,16 @@ EXTRACTION_SYSTEM_PROMPT = """你是小说人物关系抽取器。给定一段�
 3. relationships: 人物之间的关系。source 是当前文本片段中作为关系主体的人物，target 是与其发生关系的人物。
 4. type 只能使用以下 7 个枚举值之一：love（爱情）、family（血缘/家族）、friendship（友谊）、enmity（敌对/仇怨）、alliance（结盟/合作）、mentorship（师徒/师生）、other（其他无法归类的明确关系）。禁止自创类型，如 romantic、lover、亲密、爱情、love_relation 等一律归入 love。
 5. confidence: 0 到 1 之间的浮点数，表示你对这条关系判断的把握程度。
-6. 只输出 JSON 对象，不要输出任何其他文字。格式：
-{"characters": [{"name": "..."}], "relationships": [{"source": "...", "target": "...", "type": "love", "confidence": 0.9}]}"""
+6. category（可选）: 每个 character 可附 category，取值 person/generic/collective/descriptive/composite/invalid。
+   - person: 专名（天保、傩送、翠翠）
+   - generic: 泛指称谓（年青人、妇人、哥哥、弟弟）
+   - collective: 集合称谓（两个儿子、兄弟二人、父子三人）
+   - descriptive: 描述性称谓（翠翠的祖父）
+   - composite: 复合称谓（岳云二老、天保大老、天保大人）
+   - invalid: 畸形输入
+   无法确定时省略 category 字段。
+7. 只输出 JSON 对象，不要输出任何其他文字。格式：
+{"characters": [{"name": "...", "category": "person"}], "relationships": [{"source": "...", "target": "...", "type": "love", "confidence": 0.9}]}"""
 
 EXTRACTION_USER_PROMPT = "请抽取以下文本中的人物与关系：\n\n{text}"
 
