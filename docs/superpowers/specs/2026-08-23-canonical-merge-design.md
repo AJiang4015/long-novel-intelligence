@@ -24,14 +24,16 @@ Person B: canonical=大老,   aliases=[天保大老, 儿子]
 
 | 阶段 | 目标 | 交付 | 落库 |
 |---|---|---|---|
-| **V0.2.3-b1** | Canonical Merge Decision | bridge evidence → canonical pair → merge judge → `merge_map` | **不写 Neo4j** |
-| **V0.2.3-b2** | Apply Canonical Merge | `merge_map` → MergedGraph 合并 → 单事务写库 | 写 Neo4j |
+| **V0.2.3-b1** | Canonical Merge Decision（**纯 decision，不改 resolver 状态**） | bridge evidence → canonical pair → merge judge → `merge_map` | **不写 Neo4j** |
+| **V0.2.3-b2** | Apply Canonical Merge（**唯一应用 merge_map 处**） | `merge_map` → MergedGraph 合并 → 单事务写库 | 写 Neo4j |
 
 b1 先行、稳定后再做 b2。b1 产出 `merge_map` 为 b2 唯一输入契约。
 
 ---
 
 ## 3. V0.2.3-b1：Canonical Merge Decision
+
+**b1 是纯 decision 阶段（强制）**：只读取 resolver 状态并生成 `merge_map`；**不得修改** `resolver.known` / `resolver._index` / `resolver.canonical_aliases`，也不改写任何 chunk 的 resolved 输出。所有状态变更（PersonAgg / relationships / Neo4j）一律推迟到 b2。b1 输出的 `merge_map` 是 b2 的唯一输入契约。
 
 ### 3.1 输入 / 输出
 
@@ -60,7 +62,22 @@ b1 先行、稳定后再做 b2。b1 产出 `merge_map` 为 b2 唯一输入契约
 - candidate 来源可以是 extraction confirmed / text confirmed / weak recall（V0.2.3-a 保证候选完整）
 - **只有 established canonical 参与**：established = 在本 chunk resolve 前已在 `known` 且 `known[c] == c`
 - 例：mention `天保大老` candidates `[大老, ..., 大儿子]` → pair `(大老, 大儿子)`
-- 实现：`resolve()` 开头快照 `established = {c for c in known if known[c] == c}`；pending 阶段对每个 mention 统计 `candidates ∩ established`，≥2 则旁路记录 `(c1, c2, mention, chunk_id, chapter_id, text)` 到 `merge_evidence`。**纯旁路，不改变 judge 行为**。
+- 实现：`resolve()` 开头快照 `established = {c for c in known if known[c] == c}`；pending 阶段对每个 mention 统计 `candidates ∩ established`，≥2 则旁路记录一条 **merge_evidence** 到 `merge_evidence` 列表。**纯旁路，不改变 judge 行为**。
+
+**merge_evidence 记录结构**（每条保存完整上下文，供 pair 去重、judge 输入与调试）：
+
+```json
+{
+  "mention": "天保大老",                      # 桥接 mention 本身
+  "candidates": ["大老", "大儿子", "..."],     # 该 mention 的完整候选（established canonical 部分）
+  "pair": ["大老", "大儿子"],                   # 生成 canonical pair（无序，用于 frozenset 去重）
+  "chunk_id": 11,
+  "chapter_id": 3,
+  "text": "前几天顺顺家天保大老过溪时，同祖父谈话…"
+}
+```
+
+- 一个 mention 若同时命中 ≥3 个 established canonical（如候选含 C1/C2/C3），可生成多个 pair（(C1,C2)、(C1,C3)、(C2,C3)），每 pair 各记一条 evidence（共享同一 chunk_id/chapter_id/text）
 
 ### 3.3 pair 去重
 
@@ -113,11 +130,13 @@ b1 先行、稳定后再做 b2。b1 产出 `merge_map` 为 b2 唯一输入契约
 - 禁止生成新 canonical（LLM 不得创造输入之外的任何名字）
 - **judge failure → 不 merge**（保持分裂，安全默认）
 
-**数据来源**：resolver 需新增轻量状态（见 §3.6），以在 b1 阶段提供 first_seen_chunk / mention_count / chapters。
+**数据来源**：resolver 需新增轻量状态（first_seen_chunk 定义见 §3.5；mention_count / chapters 同源统计），以在 b1 阶段提供 judge 输入。
 
-### 3.5 Canonical 选择（C_keep 规则）
+### 3.5 first_seen 定义与 Canonical 选择（C_keep 规则）
 
-严格：**C_keep = 两个 canonical 中 first_seen_chunk 更早者**。
+**first_seen_chunk 定义（明确）**：**首次确立 canonical 的 chunk_id**——即该名字经 `_register()`（或经 judge 并入前）成为 canonical 的那一刻所在的 chunk_id，**不是原文中该词首次出现的位置**。例：`大儿子` 在 chunk 6 被提取并成为 canonical → `first_seen_chunk("大儿子") = 6`，即使「大儿子」字样在更早 chunk 已出现。
+
+严格：**C_keep = 两个 canonical 中 first_seen_chunk 更小（更早）者**。
 
 - first_seen_chunk 相同 → 确定性 tie-break（如 canonical 字符串升序；实现时固定，写测试锁死）
 - **绝不**：改 canonical 名称 / 选最长名字 / 选出现最多名字 / 让 LLM 决定 canonical
@@ -138,7 +157,7 @@ merge_map: dict[str, str]     # C_drop -> C_keep（直接映射，非 union-find
 
 - **不写入 `failed_blocks`**：failed_blocks 语义是「chunk pipeline 处理失败」；canonical merge 是整本 resolve 后的 entity merge phase，不属于某个 chunk 的失败
 - 统计进 `stats.entity_resolution`（见 §3.1 输出）；失败详情可选进 `merge_failures`
-- judge failure / confidence 低于阈值（如 < 0.5）→ 不 merge，计入 rejected_pairs
+- **confidence threshold 为可配置项**（如 `settings.merge_confidence_threshold`，经 `EntityResolver` 构造参数注入），不硬编码为 0.5；judge failure / confidence 低于阈值 → 不 merge，计入 rejected_pairs
 
 ### 3.8 b1 测试（mock merge judge，不调真实 LLM）
 
@@ -147,10 +166,12 @@ merge_map: dict[str, str]     # C_drop -> C_keep（直接映射，非 union-find
 3. bridge mention 双侧命中 → 产生 pair
 4. pair 去重（同 pair 只出现一次）
 5. merge judge failure → 不 merge
-6. confidence 太低 → 不 merge
-7. first_seen 更早者成为 keep
+6. confidence 太低（低于可配置阈值）→ 不 merge
+7. first_seen_chunk 更早者成为 keep
 8. A/B 已通过已有 merge_map 合并 → 不重复生成 pair
 9. 不做全局 O(N²) canonical comparison（构造 >100 canonical 仍线性）
+10. **纯 decision 锁死**：b1 执行前后 `resolver.known` / `_index` / `canonical_aliases` 完全不变（快照对比）
+11. **merge_evidence 完整**：单条含 mention / candidates / pair / chunk_id / chapter_id / text；mention 命中 3 canonical 时生成 3 条 pair evidence
 
 ---
 
@@ -245,9 +266,9 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 
 ## 5. 职责边界（resolver / merger / db）
 
-| 层 | 职责（b1） | 职责（b2） |
+| 层 | 职责（b1：纯 decision，只读 resolver） | 职责（b2：应用 merge_map，唯一改状态处） |
 |---|---|---|
-| **resolver.py** | 新增：established 快照、bridge evidence 旁路收集、first_seen_chunk / mention_count / chapters 轻量状态、merge judge 调用、merge_map 构建 + `resolve_merge_root` | 提供 merge_map + 更新后的 canonical_aliases 给 apply_aliases |
+| **resolver.py** | 新增：established 快照、bridge evidence 旁路收集、first_seen_chunk / mention_count / chapters 轻量状态（只读附加，不改 known/_index/canonical_aliases）、merge judge 调用、merge_map 构建 + `resolve_merge_root` | 提供 merge_map + 更新后的 canonical_aliases 给 apply_aliases（b2 才允许更新 alias 结构） |
 | **merger.py** | 不变 | PersonAgg 加 `chunk_ids`；新增 `apply_merges(graph, merge_map)`：PersonAgg 合并、aliases 合并、RELATES_TO 重定向/聚合/self-loop 删除 |
 | **db/neo4j.py** | 不变 | `upsert_graph` 改造为单事务（execute_write / begin_transaction），新增 C_drop 删除步骤 |
 | **schemas/llm.py** | 新增 MergeJudgeResult / MergePair 契约 | 不变 |
@@ -256,8 +277,8 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 
 ## 6. merge_map 生命周期
 
-1. b1 构建（ingest 内，resolver 实例内存）
-2. b2 应用（内存 MergedGraph 合并 + 落库）
+1. b1 构建（ingest 内，resolver 实例内存；**b1 不修改 resolver 任何状态**）
+2. b2 应用（内存 MergedGraph 合并 + 落库；**merge_map 只在 b2 被消费**）
 3. ingest 结束 → resolver 实例丢弃；canonical 结果已落库，merge_map 不持久化
 4. 旧 Novel 数据不迁移（明确不做）
 
@@ -266,7 +287,7 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 | 环节 | 失败行为 |
 |---|---|
 | merge judge LLM 调用失败 / 校验失败 | 不 merge；计入 `stats.entity_resolution.failed_pairs` + `merge_failures`；不写 failed_blocks |
-| confidence < 阈值（0.5） | 不 merge；计入 rejected_pairs |
+| confidence < 阈值（可配置 `merge_confidence_threshold`，默认 0.5，非硬编码） | 不 merge；计入 rejected_pairs |
 | 批量中部分 pair 失败 | 只 merge 成功的 |
 | b2 单事务失败 | 整体回滚；job failed |
 | 传递冲突（A≈B, B≈C） | 不自动合并；除非 A/C 有独立 evidence 且 judge 通过 |
@@ -291,7 +312,7 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 
 ## 10. 测试策略总览
 
-- **b1 测试**：9 项（§3.8），mock merge judge
+- **b1 测试**：11 项（§3.8），mock merge judge
 - **b2 测试**：12 项单测 + 1 项集成（§4.8），mock merge judge
 - 全部遵守 TESTING.md §9（真实 LLM 与 pytest 分离）；不调用真实 LLM
 - 新增测试文件建议：`backend/tests/unit/test_merge.py`（b1+b2 单测）、`backend/tests/integration/test_merge_neo4j.py`（b2 集成）
