@@ -12,6 +12,7 @@ class PersonAgg:
     mention_count: int = 0
     chapters: set[int] = field(default_factory=set)
     aliases: list[str] = field(default_factory=list)
+    chunk_ids: set[int] = field(default_factory=set)   # V0.2.3-b2：distinct chunk 集合
 
 
 @dataclass
@@ -72,8 +73,11 @@ def merge_extractions(extractions: list[tuple[Chunk, ExtractionResult]]) -> Merg
                     })
         for name in seen_names:
             person = graph.persons.setdefault(name, PersonAgg(name=name))
-            person.mention_count += 1
+            person.chunk_ids.add(chunk.chunk_id)   # V0.2.3-b2：收集 distinct chunk
             person.chapters.add(chunk.chapter_id)
+    # V0.2.3-b2：mention_count = len(chunk_ids)（distinct chunk 语义）
+    for person in graph.persons.values():
+        person.mention_count = len(person.chunk_ids)
     return graph
 
 

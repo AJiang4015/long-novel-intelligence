@@ -98,3 +98,27 @@ def test_apply_aliases_filters_canonical_and_dedupes():
     )
     apply_aliases(graph, {"傩送": ["二老", "傩送", "二老", "二老爷"]})
     assert graph.persons["傩送"].aliases == ["二老", "二老爷"]
+
+
+# ---------- Task 1: chunk_ids 收集 ----------
+
+def test_merge_extractions_collects_chunk_ids():
+    """merge_extractions 聚合时收集 chunk_ids；同 chunk 内重复 canonical 只计一次。"""
+    graph = merge_extractions([
+        (make_chunk(1), extraction([], characters=[{"name": "大儿子"}, {"name": "大儿子"}])),  # 同 chunk 重复
+        (make_chunk(2), extraction([], characters=[{"name": "大儿子"}])),
+    ])
+    p = graph.persons["大儿子"]
+    assert p.chunk_ids == {1, 2}
+    assert p.mention_count == 2   # len(chunk_ids)，非 3
+
+
+def test_chunk_ids_distinct_across_chunks():
+    """不同 chunk 各自计数；mention_count = distinct chunk 数。"""
+    graph = merge_extractions([
+        (make_chunk(1), extraction([], characters=[{"name": "A"}])),
+        (make_chunk(2), extraction([], characters=[{"name": "A"}])),
+        (make_chunk(3), extraction([], characters=[{"name": "A"}, {"name": "A"}, {"name": "A"}])),
+    ])
+    assert graph.persons["A"].chunk_ids == {1, 2, 3}
+    assert graph.persons["A"].mention_count == 3
