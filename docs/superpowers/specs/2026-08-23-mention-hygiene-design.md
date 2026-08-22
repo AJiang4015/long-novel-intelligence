@@ -61,6 +61,14 @@ class MentionCategory(str, Enum):
 
 **优先级**：deterministic hard rules 判定为 COLLECTIVE/INVALID 时**以规则为准**（覆盖 LLM category，防止 LLM 误标）；其余以 LLM category 为准；`None` 且规则未命中 → 按 PERSON 处理（保守，不误伤）。
 
+**实现约束 1（category=None 语义）**：`category=None` 且 hard rules 未命中时，按 **legacy PERSON fallback** 处理——这是**向后兼容**，**不表示** LLM 明确判断为 PERSON。需增加旧版 ExtractionResult 无 category 的回归测试。
+
+**实现约束 3（hard rules 范围）**：`hygiene.py` hard rules **只允许高置信 COLLECTIVE / INVALID 直接过滤**，不得把 GENERIC / DESCRIPTIVE / COMPOSITE 扩大为硬过滤：
+- `两个儿子` / `兄弟二人` / `父子三人` / `两弟兄` → 可 hard filter（COLLECTIVE）
+- `弟弟` / `妇人` / `年青人` / `哥哥` → 只能分类为 GENERIC，**不直接过滤**（由 resolver 决策：有候选进 judge，无候选丢弃）
+- `岳云二老` / `天保大老` / `天保大人` → COMPOSITE，**不直接过滤**
+- `翠翠的祖父` → DESCRIPTIVE，**不直接过滤**
+
 ## 5. Resolver 决策表
 
 | category | 有候选 | 无候选 |
@@ -73,6 +81,8 @@ class MentionCategory(str, Enum):
 | INVALID | 硬过滤 | 硬过滤 |
 
 **被过滤 mention 不得进入**：`known` / `_index` / `canonical_aliases` / `merge_evidence` / canonical merge。
+
+**实现约束 2（GENERIC 候选来源）**：GENERIC 的候选**必须来自当前有效 canonical index**（即 `_index` 中现存 canonical）。COLLECTIVE / INVALID **不得进入 candidate recall**（`_recall` 的 confirmed/text_confirmed/weak 三层都不得命中它们）。**不得因为历史污染节点存在就让 GENERIC 继续吸收污染 canonical**——若 `_index` 中残留 COLLECTIVE canonical（旧数据/漏判），GENERIC 不得吸收它（`_recall` 层排除被硬过滤分类的 canonical）。
 
 **关键防护**：
 - GENERIC 无候选 → 丢弃（不注册）；GENERIC 有候选但不因「唯一候选」自动成为 alias——必须 judge 明确判定（现有 `_apply_judge` 已要求 resolves_to 来自候选，天然满足；需确认 GENERIC 不绕过 judge）
