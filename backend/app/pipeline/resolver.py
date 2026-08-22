@@ -282,7 +282,8 @@ class EntityResolver:
             ))
 
         stats = {"merge_candidate_pairs": len(pairs_input),
-                 "merged_pairs": 0, "rejected_pairs": 0, "failed_pairs": 0}
+                 "merged_pairs": 0, "rejected_pairs": 0,
+                 "low_confidence_pairs": 0, "failed_pairs": 0}
         merge_failures: list[dict] = []
 
         if not pairs_input:
@@ -304,8 +305,11 @@ class EntityResolver:
             key = frozenset((d.a, d.b))
             if key not in valid_keys:
                 continue  # 约束：a/b 必须来自输入 pairs
-            if not d.merge or d.confidence < confidence_threshold:
+            if not d.merge:
                 stats["rejected_pairs"] += 1
+                continue
+            if d.confidence < confidence_threshold:
+                stats["low_confidence_pairs"] += 1
                 continue
             c1, c2 = tuple(key)
             # 确定性 keep：first_seen 更小者；相同 → canonical 字符串升序较小者

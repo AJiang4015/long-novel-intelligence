@@ -153,7 +153,7 @@ def test_low_confidence_not_merged():
     })
     out = r.decide_merges(judge, confidence_threshold=0.5)
     assert out["merge_map"] == {}
-    assert out["stats"]["entity_resolution"]["rejected_pairs"] == 1
+    assert out["stats"]["entity_resolution"]["low_confidence_pairs"] == 1
 
 
 # 7. first_seen 更早者成为 keep
