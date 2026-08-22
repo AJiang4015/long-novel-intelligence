@@ -25,6 +25,16 @@ _INVALID_PATTERNS = [
     re.compile(r"^[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?~`]+$"),  # 纯符号
 ]
 
+# V0.2.4-b RC3：relational generic 精确词表（归入 GENERIC，不新增 Enum）。
+# 只限制「建立 canonical 的资格」：有候选可 alias，无候选丢弃，永不新建 canonical。
+# 精确词匹配（name in set），不做子串匹配，避免误伤「顺顺的兄弟」等描述性 mention。
+# 注意：祖父/父亲/母亲 暂不进入本词表，是基于《边城》当前数据验证（正文真实人物）的
+# **项目级决策，不是通用语义规则**——换小说时需重新评估这些词是否该入表。
+_RELATIONAL_GENERIC_WORDS = {
+    "兄弟", "哥哥", "弟弟", "姐姐", "妹妹", "儿子", "女儿",
+    "妻子", "丈夫", "祖母", "外婆", "外公", "叔叔", "婶婶", "侄儿", "侄女",
+}
+
 
 def classify_mention(name: str) -> MentionCategory | None:
     """deterministic hard rules：仅返回 COLLECTIVE / INVALID；否则 None。
@@ -40,6 +50,9 @@ def classify_mention(name: str) -> MentionCategory | None:
     for pat in _COLLECTIVE_PATTERNS:
         if pat.match(name):
             return MentionCategory.COLLECTIVE
+    # V0.2.4-b RC3：relational generic 精确词 → GENERIC（有候选可 alias，无候选丢弃，永不 canonical）
+    if name in _RELATIONAL_GENERIC_WORDS:
+        return MentionCategory.GENERIC
     return None
 
 

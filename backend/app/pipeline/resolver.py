@@ -85,15 +85,44 @@ class EntityResolver:
                 else:
                     self.hygiene_stats["invalid_filtered"] += 1
                 continue
+            # V0.2.4-b RC3：relational generic 词表命中 → 强制 GENERIC。
+            # GENERIC 无候选丢弃（不进 resolved.characters）；有候选走 judge。
+            if classify_mention(c.name) == MentionCategory.GENERIC:
+                resolved_name, needs_judge = self._resolve_name(c.name, confirmed, text_confirmed)
+                if needs_judge:
+                    pending.append(self._pending_for(c.name, confirmed, text_confirmed))
+                # GENERIC 无候选丢弃：_resolve_name 返回 (name, False) 且未注册 → 跳过
+                elif resolved_name == c.name and c.name not in self.known:
+                    continue
+                resolved_chars.append({"name": resolved_name})
+                continue
             resolved_chars.append({"name": do_name(c.name)})
         for r in result.relationships:
             # V0.2.4-a RC2：任一 endpoint 为硬过滤 mention → 丢弃整条关系（不计数）
             if is_hard_filtered(r.source) or is_hard_filtered(r.target):
                 continue
-            src = do_name(r.source)
-            tgt = do_name(r.target)
+            # V0.2.4-b RC3：relational generic endpoint → 走 GENERIC 语义；
+            # 无候选丢弃整条关系（不计数）；有候选走 judge。
+            if classify_mention(r.source) == MentionCategory.GENERIC:
+                rsrc, r_needs = self._resolve_name(r.source, confirmed, text_confirmed)
+                if r_needs:
+                    pending.append(self._pending_for(r.source, confirmed, text_confirmed))
+                    rsrc = r.source
+                elif rsrc == r.source and r.source not in self.known:
+                    continue   # GENERIC 无候选丢弃 → 整条关系丢弃
+            else:
+                rsrc = do_name(r.source)
+            if classify_mention(r.target) == MentionCategory.GENERIC:
+                rtgt, t_needs = self._resolve_name(r.target, confirmed, text_confirmed)
+                if t_needs:
+                    pending.append(self._pending_for(r.target, confirmed, text_confirmed))
+                    rtgt = r.target
+                elif rtgt == r.target and r.target not in self.known:
+                    continue   # GENERIC 无候选丢弃 → 整条关系丢弃
+            else:
+                rtgt = do_name(r.target)
             resolved_rels.append({
-                "source": src, "target": tgt, "type": r.type.value,
+                "source": rsrc, "target": rtgt, "type": r.type.value,
                 "confidence": r.confidence,
             })
 
@@ -126,7 +155,16 @@ class EntityResolver:
 
         # 判定后二次替换（pending 中的 mention → canonical）
         if pending:
-            name_map = {p.mention: self.known[p.mention] for p in pending}
+            from app.pipeline.hygiene import classify_mention
+            # V0.2.4-b RC3：GENERIC 判 null 被丢弃 → 从输出中移除（不保留原名，不泄漏）
+            dropped = {p.mention for p in pending
+                       if p.mention not in self.known
+                       and classify_mention(p.mention) == MentionCategory.GENERIC}
+            resolved_chars = [c for c in resolved_chars if c["name"] not in dropped]
+            resolved_rels = [r for r in resolved_rels
+                             if r["source"] not in dropped and r["target"] not in dropped]
+            name_map = {p.mention: self.known[p.mention]
+                        for p in pending if p.mention in self.known}
             resolved_chars = [{"name": name_map.get(c["name"], c["name"])} for c in resolved_chars]
             for rel in resolved_rels:
                 rel["source"] = name_map.get(rel["source"], rel["source"])
@@ -174,8 +212,18 @@ class EntityResolver:
                 self.hygiene_stats["invalid_filtered"] += 1
             return name, False   # 不注册、不进 pending——原样返回（characters/关系保留原名，无害）
         candidates = self._recall(name, confirmed, text_confirmed)
-        # V0.2.4：category 决策（仅在 LLM 提供 category 时；None → legacy PERSON）
-        cat = self._category_of(name)
+        # V0.2.4-b RC3：category precedence（评审锁定）——
+        # 1. COLLECTIVE / INVALID hard rules（已在上方 is_hard_filtered 分支处理）
+        # 2. relational-generic exact-match → 强制 GENERIC（无论 LLM category 是 PERSON/None/其他，
+        #    都不得注册为 canonical；有候选可 alias，无候选丢弃）
+        # 3. 其余才使用 LLM category
+        # 4. 无 category 才走 legacy PERSON fallback
+        from app.pipeline.hygiene import classify_mention
+        hy_cat = classify_mention(name)
+        if hy_cat == MentionCategory.GENERIC:
+            cat = MentionCategory.GENERIC   # 强制覆盖 LLM category（含 LLM 误标 PERSON）
+        else:
+            cat = self._category_of(name)   # LLM category（可能 None → legacy PERSON）
         if not candidates:
             if cat == MentionCategory.GENERIC:
                 self.hygiene_stats["generic_filtered"] += 1
@@ -259,7 +307,7 @@ class EntityResolver:
     def _apply_judge(self, judge_result: AliasJudgeResult, pending: list[PendingMention]):
         valid_canonicals = {c.canonical for p in pending for c in p.candidates}
         valid_mentions = {p.mention for p in pending}
-        from app.pipeline.hygiene import is_hard_filtered
+        from app.pipeline.hygiene import classify_mention, is_hard_filtered
         for r in judge_result.resolutions:
             if r.mention not in valid_mentions:
                 continue  # 约束：mention 必须来自输入
@@ -269,6 +317,9 @@ class EntityResolver:
                 continue  # V0.2.4 防御：不吸收硬过滤 canonical
             if is_hard_filtered(r.mention):
                 continue  # V0.2.4 防御：被硬过滤 mention 的判定结果不写 known
+            # V0.2.4-b RC3：relational generic（词表判定 GENERIC）判 null → 丢弃，不注册 canonical
+            if r.resolves_to is None and classify_mention(r.mention) == MentionCategory.GENERIC:
+                continue
             self.known[r.mention] = r.resolves_to if r.resolves_to is not None else r.mention
             if r.resolves_to is not None:
                 self._add_alias(r.resolves_to, r.mention)
@@ -286,6 +337,9 @@ class EntityResolver:
             if p.mention not in judged:
                 # V0.2.4 防御：被硬过滤 mention 不得因防御路径注册
                 if is_hard_filtered(p.mention):
+                    continue
+                # V0.2.4-b RC3 防御：relational generic 不得因防御路径注册
+                if classify_mention(p.mention) == MentionCategory.GENERIC:
                     continue
                 self._register(p.mention)
 
