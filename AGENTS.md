@@ -62,7 +62,7 @@ UI/UX 和 Design System 的唯一事实来源。
 
 ### PROBLEM.md
 
-项目长期问题知识库。
+项目长期问题知识库：**PROBLEM.md = 问题地图 + 诊断路由**（症状→第一检查位置），`docs/problems/` 存放完整 Problem Record（20 字段模板），`docs/evaluation/` 存放真实数据实验记录（Problem Record 只引用）。
 
 记录：
 
@@ -74,7 +74,7 @@ UI/UX 和 Design System 的唯一事实来源。
 * 环境问题
 * 限制与经验
 
-任何非 trivial 的问题解决后必须更新 `PROBLEM.md`。
+任何非 trivial 的问题解决后必须更新 `PROBLEM.md` 或对应 `docs/problems/*.md`。
 
 ---
 
@@ -264,27 +264,30 @@ MATCH (n:Novel) DELETE n
 
 ## 条目结构
 
-每个条目按「可行动的知识」组织，不是事件回放：
+`PROBLEM.md` 是**问题地图 + 诊断路由**（§1 Diagnostic Routing 症状→第一检查位置；§2 Index；§3 Active；§4 Resolved；§5 Records Directory）。完整 Problem Record 存放在 `docs/problems/PXXX-*.md`，统一 20 字段模板：Status / Severity / Domain / Tags / First Seen / Last Verified / Evidence Level（HIGH/MEDIUM/LOW）/ Decision Type（FACT/HYPOTHESIS/EXPERIMENT_RESULT/DESIGN_DECISION/KNOWN_LIMITATION）/ Related Problems / Related Commits / Related Evaluation Reports / Context / Symptom / Impact / Trigger / Timeline / Initial Hypothesis / Investigation Path / Experiments / Evidence / Root Cause / Ruled-out Causes / Failed Approaches / Correct Approach / Invariants / Validation / Trade-offs / Decision / Follow-up / Current Limitation / Do Not Reopen。
 
-```markdown
-### PXX <一句话问题名（可搜索）>
-- 症状: 现象（可复现）
-- 根因: 已验证的直接/根本原因（不得写猜测）
-- 错误做法: 曾经导致问题的做法
-- 正确做法: 应该怎么做
-- 以后遇到类似问题: 先查什么 / 不要做什么 / 怎么处理
-- Status: ✅ resolved | 🔍 investigating（必须视觉区分）
-- Git commit: <相关 commit>
-```
+摘要与索引条目保持简洁（PROBLEM.md 只承载地图 + 摘要，不承载事故过程）。
 
-已解决与调查中的条目必须用状态标记视觉区分（✅ / 🔍），顶部提供按域索引表。
+## Agent 使用要求
 
-## 维护规则
+* 开发/Debug 前先读取 `PROBLEM.md`
+* **遇到症状先走 §1 Diagnostic Routing**，根据 First Check 定位，再读对应 `docs/problems/PXXX-*.md` 的 Investigation Path 与 Failed Approaches，**不要凭经验直接修改代码**
+* 解决非 trivial 问题后更新对应 Problem Record（PROBLEM.md 摘要 + docs/problems 详细记录）
+* 不覆盖历史事实：只增改，不删除/改写已确认的根因、方案、commit、被证伪假设
+* 已 resolved 问题若再次出现同样症状，先检查旧解决方案是否回退、环境是否变化、输入是否变化或出现新的 reproduction（见各记录「Do Not Reopen」），**不得盲目重复旧修复**
 
-* 解决非 trivial 问题后按上述结构更新；未完全解决标 `🔍 investigating`
-* 不得把未经验证的猜测写成最终根因
-* 不得删除历史条目（只增改）
-* 记录高频坑的「Do / Don't」于 `PROBLEM.md` §0，替代单条流水账
+## Problem Knowledge Rule
+
+1. 开发/Debug 前先阅读 `PROBLEM.md`（§1 Routing + §2 Index）。
+2. 遇到已知 Trigger 时，先读取对应 `docs/problems/Pxxx-*.md`。
+3. Diagnose 模式只修改诊断文档，不修改代码/数据。
+4. Fix 完成后必须更新对应 Problem Record（含 Validation 与 Do Not Reopen）。
+5. 新增问题必须区分 Decision Type：FACT / HYPOTHESIS / EXPERIMENT_RESULT / DESIGN_DECISION / KNOWN_LIMITATION。
+6. **不删除被证伪假设**（写入 Ruled-out Causes，防止后续 Agent 重复调查）。
+7. 不覆盖历史实验结果。
+8. 不把单次真实 LLM evaluation 当 deterministic fact（Evidence Level 区分 HIGH/MEDIUM/LOW）。
+9. Resolved 问题再次出现，先检查：code regression / environment change / model change / input change，不得直接重复旧修复。
+10. Problem Record 必须记录 Validation 和 Do Not Reopen。
 
 ---
 
