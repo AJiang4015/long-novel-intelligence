@@ -112,17 +112,19 @@ class EntityResolver:
         return name, True  # 进 pending，本 chunk 末统一判定
 
     def _recall(self, mention: str, confirmed: set[str], text_confirmed: set[str]) -> list[AliasCandidate]:
-        """候选召回：extraction 共现（强，优先）+ 文本层共现 + 字符重合/子串（保持原有）。
+        """候选召回（V0.2.3-a strong/weak 两段式）：
 
-        - confirmed 中的 canonical（本 chunk 提取输出中已确认）→ 高优先候选；
-        - text_confirmed 中的 canonical（chunk 原文出现）→ 与 extraction 共现同级、高于字符重合；
-        - 其余走原有 子串包含优先 + 共享字符数 排序；
-        - 合计截断 RECALL_TOP_K；共现候选先去重（同一 canonical 只出现一次）。
+        - strong（全部保留，不受 RECALL_TOP_K 限制）：
+          ① extraction 共现（confirmed，本 chunk 提取输出中已确认的 canonical）
+          ② 文本层共现（text_confirmed，chunk 原文出现的已知 canonical/alias）
+          strong 按 canonical 去重，extraction 在前、text 在后。
+        - weak（只补足到 RECALL_TOP_K）：字符重合/子串，确定性 tie-break。
+        - RECALL_TOP_K 语义 = weak 补位目标容量，不再是最终候选数硬上限。
         """
         out: list[AliasCandidate] = []
         seen: set[str] = set()
 
-        # 1) extraction 共现候选（强，优先）
+        # 1) strong：extraction 共现候选（强，优先）
         for canonical in confirmed:
             if canonical == mention or canonical not in self._index or canonical in seen:
                 continue
@@ -132,7 +134,7 @@ class EntityResolver:
                 matched_names=sorted(self._index[canonical]),
             ))
 
-        # 2) 文本层共现候选（chunk 原文出现的已知 canonical；优先级同 extraction 共现，高于字符重合）
+        # 2) strong：文本层共现候选（强，顺序在 extraction 之后）
         for canonical in text_confirmed:
             if canonical == mention or canonical not in self._index or canonical in seen:
                 continue
@@ -142,7 +144,7 @@ class EntityResolver:
                 matched_names=sorted(self._index[canonical]),
             ))
 
-        # 3) 原有字符重合 + 子串候选（排除共现重复）
+        # 3) weak：字符重合 + 子串候选，只补足剩余容量；确定性 tie-break（不依赖 set/dict 顺序）
         scored: list[tuple[int, int, str]] = []
         for canonical, names in self._index.items():
             if canonical in seen:
@@ -154,14 +156,15 @@ class EntityResolver:
                     break
             overlap = max(_overlap(mention, n) for n in names) if names else 0
             scored.append((1 if hit else 0, overlap, canonical))
-        scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        # 排序键：-prio（子串命中优先）、-overlap（共享字符多优先）、canonical 升序（确定性 tie-break）
+        scored.sort(key=lambda t: (-t[0], -t[1], t[2]))
         for _prio, _ov, canonical in scored[: max(0, RECALL_TOP_K - len(out))]:
             seen.add(canonical)
             out.append(AliasCandidate(
                 canonical=canonical,
                 matched_names=sorted(self._index[canonical]),
             ))
-        return out[:RECALL_TOP_K]
+        return out
 
     def _pending_for(self, mention: str, confirmed: set[str], text_confirmed: set[str]) -> PendingMention:
         return PendingMention(mention=mention, candidates=self._recall(mention, confirmed, text_confirmed))
