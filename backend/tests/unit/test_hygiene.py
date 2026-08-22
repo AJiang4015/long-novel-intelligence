@@ -207,3 +207,111 @@ def test_filtered_mention_not_in_merge_evidence():
     r.resolve(make_chunk(1), extraction(["两个儿子"], {"两个儿子": MentionCategory.COLLECTIVE}))
     assert all("两个儿子" not in ev["mention"] and "两个儿子" not in ev["pair"]
                for ev in r.merge_evidence)
+
+
+# ---------- V0.2.4-a RC2：硬过滤 mention 输出层彻底剔除 ----------
+
+def extraction_with_rels(names, rels, categories=None):
+    """带关系端点的 extraction：rels=[(source, target, type, confidence)]。"""
+    chars = []
+    for n in names:
+        item = {"name": n}
+        if categories and categories.get(n) is not None:
+            item["category"] = categories[n].value
+        chars.append(item)
+    return ExtractionResult.model_validate({
+        "characters": chars,
+        "relationships": [
+            {"source": s, "target": t, "type": typ, "confidence": conf}
+            for (s, t, typ, conf) in rels
+        ],
+    })
+
+
+def test_rc2_collective_not_in_resolved_characters():
+    """RC2：两个儿子 被硬过滤 → 不进入 resolved.characters。"""
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(1),
+                       extraction(["两个儿子"], {"两个儿子": MentionCategory.COLLECTIVE}))
+    assert "两个儿子" not in [c.name for c in out.characters]
+
+
+def test_rc2_collective_not_in_merged_persons():
+    """RC2：完整链 resolve → merge_extractions → 两个儿子 不进 merged.persons。"""
+    from app.pipeline.merger import merge_extractions, apply_aliases
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(1),
+                       extraction(["两个儿子", "顺顺"],
+                                  {"两个儿子": MentionCategory.COLLECTIVE}))
+    merged = merge_extractions([(make_chunk(1), out)])
+    apply_aliases(merged, r.canonical_aliases)
+    assert "两个儿子" not in merged.persons
+    assert "顺顺" in merged.persons   # 正常 mention 保留
+
+
+def test_rc2_relationship_target_filtered_dropped():
+    """RC2：关系 target 为硬过滤 mention → 整条关系丢弃。"""
+    r = EntityResolver(judge=judge_null)
+    r.resolve(make_chunk(1), extraction(["顺顺"]))
+    out, _ = r.resolve(make_chunk(2), extraction_with_rels(
+        ["顺顺", "两个儿子"],
+        [("顺顺", "两个儿子", "family", 0.9)],
+        {"两个儿子": MentionCategory.COLLECTIVE}))
+    rels = [(rel.source, rel.target) for rel in out.relationships]
+    assert ("顺顺", "两个儿子") not in rels
+    assert out.relationships == []   # 整条关系被丢弃
+
+
+def test_rc2_relationship_source_filtered_dropped():
+    """RC2：关系 source 为硬过滤 mention → 整条关系丢弃。"""
+    r = EntityResolver(judge=judge_null)
+    r.resolve(make_chunk(1), extraction(["顺顺"]))
+    out, _ = r.resolve(make_chunk(2), extraction_with_rels(
+        ["顺顺", "两个儿子"],
+        [("两个儿子", "顺顺", "family", 0.9)],
+        {"两个儿子": MentionCategory.COLLECTIVE}))
+    assert out.relationships == []
+
+
+def test_rc2_invalid_not_in_output_or_merged():
+    """RC2：INVALID（纯数字）同样剔除，不进 resolved.characters / merged.persons。"""
+    from app.pipeline.merger import merge_extractions
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(1), extraction(["12345", "顺顺"],
+                                                  {"12345": MentionCategory.INVALID}))
+    assert "12345" not in [c.name for c in out.characters]
+    merged = merge_extractions([(make_chunk(1), out)])
+    assert "12345" not in merged.persons
+    assert "顺顺" in merged.persons
+
+
+def test_rc2_collective_not_in_merge_evidence_full_chain():
+    """RC2：完整链下 两个儿子 不产生 merge_evidence。"""
+    r = EntityResolver(judge=judge_null)
+    r.resolve(make_chunk(1), extraction(["两个儿子", "天保"],
+                                        {"两个儿子": MentionCategory.COLLECTIVE}))
+    assert all("两个儿子" not in ev["mention"] and "两个儿子" not in ev["pair"]
+               for ev in r.merge_evidence)
+
+
+def test_rc2_no_state_pollution():
+    """RC2：被硬过滤 mention 不污染 known/_index/canonical_aliases。"""
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(1),
+                       extraction(["两个儿子"], {"两个儿子": MentionCategory.COLLECTIVE}))
+    assert "两个儿子" not in r.known
+    assert "两个儿子" not in r._index
+    assert "两个儿子" not in r.canonical_aliases
+
+
+def test_rc2_counting_single_entry_when_char_and_rel():
+    """RC2 计数语义锁死：characters + relationships 同时含 两个儿子 → collective_filtered == 1。"""
+    r = EntityResolver(judge=judge_null)
+    r.resolve(make_chunk(1), extraction(["顺顺"]))
+    out, _ = r.resolve(make_chunk(2), extraction_with_rels(
+        ["两个儿子"],
+        [("顺顺", "两个儿子", "family", 0.9)],
+        {"两个儿子": MentionCategory.COLLECTIVE}))
+    assert r.hygiene_stats["collective_filtered"] == 1   # 不是 2
+    assert "两个儿子" not in [c.name for c in out.characters]
+    assert out.relationships == []
