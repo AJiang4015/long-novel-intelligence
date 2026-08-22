@@ -42,3 +42,48 @@ def test_character_category_enum():
     with pytest.raises(Exception):
         ExtractionResult.model_validate(
             {"characters": [{"name": "X", "category": "banana"}], "relationships": []})
+
+
+# ---------- Task 2: deterministic hard rules ----------
+from app.pipeline.hygiene import classify_mention, is_hard_filtered
+
+
+@pytest.mark.parametrize("name", ["两个儿子", "兄弟二人", "父子三人", "两弟兄", "三个儿子"])
+def test_hard_filter_collective(name):
+    """COLLECTIVE 可 hard filter：两个儿子/兄弟二人/父子三人/两弟兄。"""
+    assert is_hard_filtered(name)
+    assert classify_mention(name) == MentionCategory.COLLECTIVE
+
+
+@pytest.mark.parametrize("name", ["", "12345", "!!!", "x" * 60])
+def test_hard_filter_invalid(name):
+    assert is_hard_filtered(name)
+    assert classify_mention(name) == MentionCategory.INVALID
+
+
+@pytest.mark.parametrize("name", ["弟弟", "妇人", "年青人", "哥哥", "死去的人", "老头子"])
+def test_generic_not_hard_filtered(name):
+    """GENERIC 不得被 hard rules 过滤——只能由 LLM category 分类，resolver 决策。"""
+    assert not is_hard_filtered(name)
+    assert classify_mention(name) is None   # hard rules 不返回 GENERIC
+
+
+@pytest.mark.parametrize("name", ["岳云二老", "天保大老", "天保大人", "傩送二老"])
+def test_composite_not_hard_filtered(name):
+    """COMPOSITE 不直接过滤。"""
+    assert not is_hard_filtered(name)
+    assert classify_mention(name) is None
+
+
+@pytest.mark.parametrize("name", ["翠翠的祖父", "顺顺大儿子"])
+def test_descriptive_not_hard_filtered(name):
+    """DESCRIPTIVE 不直接过滤。"""
+    assert not is_hard_filtered(name)
+    assert classify_mention(name) is None
+
+
+@pytest.mark.parametrize("name", ["天保", "傩送", "翠翠", "祖父", "顺顺", "王团总"])
+def test_person_not_hard_filtered(name):
+    """正常专名不误伤。"""
+    assert not is_hard_filtered(name)
+    assert classify_mention(name) is None
