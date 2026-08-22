@@ -75,9 +75,21 @@ class EntityResolver:
                 return name  # 判定后再替换
             return canonical
 
+        from app.pipeline.hygiene import classify_mention, is_hard_filtered
+        # V0.2.4-a RC2：硬过滤 mention 在 characters 主处理入口剔除并计数一次；
+        # 不进 resolved.characters；同一 mention 在 relationship endpoint 命中不再重复计数。
         for c in result.characters:
+            if is_hard_filtered(c.name):
+                if classify_mention(c.name) == MentionCategory.COLLECTIVE:
+                    self.hygiene_stats["collective_filtered"] += 1
+                else:
+                    self.hygiene_stats["invalid_filtered"] += 1
+                continue
             resolved_chars.append({"name": do_name(c.name)})
         for r in result.relationships:
+            # V0.2.4-a RC2：任一 endpoint 为硬过滤 mention → 丢弃整条关系（不计数）
+            if is_hard_filtered(r.source) or is_hard_filtered(r.target):
+                continue
             src = do_name(r.source)
             tgt = do_name(r.target)
             resolved_rels.append({
