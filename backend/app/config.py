@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str
+    merge_confidence_threshold: float = 0.5   # V0.2.3-b：canonical merge 置信度阈值（可配置）
 
 
 @lru_cache

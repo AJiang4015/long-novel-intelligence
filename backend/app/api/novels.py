@@ -53,9 +53,18 @@ def _run_ingest(novel_id: str, job_id: str, title: str, epub_bytes: bytes,
                 ))
         merged = merge_extractions(resolved)
         apply_aliases(merged, resolver.canonical_aliases)
+        # V0.2.3-b2：b1 decision → b2 apply（纯内存合并）+ 单事务写库
+        merge_out = resolver.decide_merges(
+            llm_client.judge_merges,
+            confidence_threshold=settings.merge_confidence_threshold,
+        )
+        merge_map = merge_out["merge_map"]
+        from app.pipeline.merger import apply_merges
+        apply_merges(merged, merge_map)
         db.upsert_novel(novel_id, title, [{"id": c.chapter_id, "title": c.chapter_title} for c in chapters])
-        db.upsert_graph(novel_id, merged)
+        db.upsert_graph(novel_id, merged, merge_map)
         stats = db.count_stats(novel_id)
+        stats["entity_resolution"] = merge_out["stats"]["entity_resolution"]
         all_failed = bundle.failed + resolution_failed
         if all_failed:
             job_store.update(

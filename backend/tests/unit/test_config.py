@@ -17,6 +17,7 @@ def test_settings_reads_env(monkeypatch):
     assert s.llm_concurrency == 4      # 默认值
     assert s.chunk_size == 4000        # 默认值
     assert s.neo4j_uri == "bolt://localhost:7687"
+    assert s.merge_confidence_threshold == 0.5   # V0.2.3-b 默认阈值
 
 
 def test_settings_model_overridable(monkeypatch):
