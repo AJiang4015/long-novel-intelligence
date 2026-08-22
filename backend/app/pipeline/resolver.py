@@ -33,6 +33,11 @@ class EntityResolver:
         self._canonical_chapters: dict[str, set[int]] = {}  # canonical -> 出现过的 chapter_id 集合
         self._current_chunk_id: int = 0
         self._current_chapter_id: int = 0
+        # V0.2.4：mention hygiene 统计（job stats 输出）
+        self.hygiene_stats: dict[str, int] = {
+            "collective_filtered": 0, "generic_filtered": 0,
+            "descriptive_resolved": 0, "composite_resolved": 0, "invalid_filtered": 0,
+        }
 
     # ---- 公开 ----
     def resolve(self, chunk: Chunk, result: ExtractionResult) -> tuple[ExtractionResult, bool]:
@@ -144,19 +149,24 @@ class EntityResolver:
         return found
 
     def _resolve_name(self, name: str, confirmed: set[str], text_confirmed: set[str]) -> tuple[str, bool]:
-        from app.pipeline.hygiene import is_hard_filtered
+        from app.pipeline.hygiene import classify_mention, is_hard_filtered
         if name in self.known:
             canonical = self.known[name]
             confirmed.add(canonical)  # 已确认 → 成为后续同名 chunk 内共现候选源
             return canonical, False
         # V0.2.4：硬过滤 mention 永不注册（防御：即使漏过 resolve 开头过滤）
         if is_hard_filtered(name):
+            if classify_mention(name) == MentionCategory.COLLECTIVE:
+                self.hygiene_stats["collective_filtered"] += 1
+            else:
+                self.hygiene_stats["invalid_filtered"] += 1
             return name, False   # 不注册、不进 pending——原样返回（characters/关系保留原名，无害）
         candidates = self._recall(name, confirmed, text_confirmed)
         # V0.2.4：category 决策（仅在 LLM 提供 category 时；None → legacy PERSON）
         cat = self._category_of(name)
         if not candidates:
             if cat == MentionCategory.GENERIC:
+                self.hygiene_stats["generic_filtered"] += 1
                 return name, False   # 丢弃，不注册 canonical
             # PERSON / DESCRIPTIVE / COMPOSITE / None → 注册 canonical（兜底不静默丢人物）
             self._register(name)
@@ -250,6 +260,12 @@ class EntityResolver:
             self.known[r.mention] = r.resolves_to if r.resolves_to is not None else r.mention
             if r.resolves_to is not None:
                 self._add_alias(r.resolves_to, r.mention)
+                # V0.2.4：DESCRIPTIVE/COMPOSITE 消歧成功计数
+                cat = self._category_of(r.mention)
+                if cat == MentionCategory.DESCRIPTIVE:
+                    self.hygiene_stats["descriptive_resolved"] += 1
+                elif cat == MentionCategory.COMPOSITE:
+                    self.hygiene_stats["composite_resolved"] += 1
             else:
                 self._register(r.mention)
         # 未出现在判定结果中的 pending mention → 独立 canonical（防御）

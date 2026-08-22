@@ -65,6 +65,7 @@ def _run_ingest(novel_id: str, job_id: str, title: str, epub_bytes: bytes,
         db.upsert_graph(novel_id, merged, merge_map)
         stats = db.count_stats(novel_id)
         stats["entity_resolution"] = merge_out["stats"]["entity_resolution"]
+        stats["mention_hygiene"] = resolver.hygiene_stats   # V0.2.4
         all_failed = bundle.failed + resolution_failed
         if all_failed:
             job_store.update(
