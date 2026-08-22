@@ -1,7 +1,7 @@
 import pytest
 
 from app.pipeline.chunker import Chunk
-from app.pipeline.merger import MergedGraph, PersonAgg, apply_aliases, merge_extractions
+from app.pipeline.merger import MergedGraph, PersonAgg, RelAgg, apply_aliases, apply_merges, merge_extractions
 from app.schemas.llm import ExtractionResult, Relationship, RelationshipType
 
 
@@ -122,3 +122,158 @@ def test_chunk_ids_distinct_across_chunks():
     ])
     assert graph.persons["A"].chunk_ids == {1, 2, 3}
     assert graph.persons["A"].mention_count == 3
+
+
+# ---------- Task 2: apply_merges ----------
+
+def build_graph_for_merge():
+    """A(keep, first chunk1) + B(drop, first chunk2)；A/B 各有关系与 alias。"""
+    graph = MergedGraph(persons={
+        "A": PersonAgg(name="A", chapters={1}, aliases=["别名A"], chunk_ids={1}),
+        "B": PersonAgg(name="B", chapters={2}, aliases=["别名B"], chunk_ids={2}),
+        "X": PersonAgg(name="X", chapters={1, 2}, aliases=[], chunk_ids={1, 2}),
+    })
+    graph.relationships = {
+        ("A", "X", RelationshipType.friendship): RelAgg(
+            source="A", target="X", type=RelationshipType.friendship,
+            chunk_ids={1}, confidences=[0.8], evidence=[{"chunk_id": 1, "chapter_id": 1, "text": "e1"}]),
+        ("B", "X", RelationshipType.friendship): RelAgg(
+            source="B", target="X", type=RelationshipType.friendship,
+            chunk_ids={2}, confidences=[0.7], evidence=[{"chunk_id": 2, "chapter_id": 2, "text": "e2"}]),
+        ("B", "A", RelationshipType.family): RelAgg(   # B↔A 合并后成 self-loop → 删除
+            source="B", target="A", type=RelationshipType.family,
+            chunk_ids={2}, confidences=[0.6], evidence=[]),
+    }
+    return graph
+
+
+def test_apply_merges_aliases_merge_order():
+    """aliases = C_keep 原 aliases → C_drop aliases → C_drop canonical name。"""
+    g = build_graph_for_merge()
+    apply_merges(g, {"B": "A"})
+    assert g.persons["A"].aliases == ["别名A", "别名B", "B"]
+
+
+def test_apply_merges_aliases_dedup_and_no_canonical():
+    """canonical 不进 aliases；重复 alias 去重。"""
+    g = MergedGraph(persons={
+        "A": PersonAgg(name="A", aliases=["X", "共享"], chunk_ids={1}),
+        "B": PersonAgg(name="B", aliases=["X", "共享"], chunk_ids={2}),   # X/共享 均与 A 重复
+    })
+    apply_merges(g, {"B": "A"})
+    assert g.persons["A"].aliases == ["X", "共享", "B"]
+
+
+def test_apply_merges_chunk_ids_union():
+    """chunk_ids union；mention_count = len(union)。"""
+    g = MergedGraph(persons={
+        "A": PersonAgg(name="A", chunk_ids={1, 2}),
+        "B": PersonAgg(name="B", chunk_ids={2, 3}),   # 与 A 重叠 chunk 2
+    })
+    apply_merges(g, {"B": "A"})
+    p = g.persons["A"]
+    assert p.chunk_ids == {1, 2, 3}
+    assert p.mention_count == 3          # union 长度，非 2+2=4
+
+
+def test_apply_merges_chapters_union():
+    g = MergedGraph(persons={
+        "A": PersonAgg(name="A", chapters={1, 3}),
+        "B": PersonAgg(name="B", chapters={2, 3}),
+    })
+    apply_merges(g, {"B": "A"})
+    assert g.persons["A"].chapters == {1, 2, 3}
+
+
+def test_apply_merges_c_drop_removed_from_persons():
+    g = build_graph_for_merge()
+    apply_merges(g, {"B": "A"})
+    assert "B" not in g.persons
+
+
+def test_apply_merges_relationship_redirect():
+    """source/target == C_drop 的边重定向到 C_keep。"""
+    g = build_graph_for_merge()
+    apply_merges(g, {"B": "A"})
+    assert ("B", "X", RelationshipType.friendship) not in g.relationships
+    merged_rel = g.relationships[("A", "X", RelationshipType.friendship)]
+    assert merged_rel.chunk_ids == {1, 2}          # A→X 与 B→X 合并
+
+
+def test_apply_merges_relationship_confidence_reaggregated():
+    """重定向后同 key 关系 confidence 重新聚合（算术平均）。"""
+    g = build_graph_for_merge()
+    apply_merges(g, {"B": "A"})
+    rel = g.relationships[("A", "X", RelationshipType.friendship)]
+    assert rel.confidences == [0.8, 0.7]
+    assert rel.confidence == pytest.approx(0.75)
+
+
+def test_apply_merges_evidence_cap():
+    """evidence 保持 EVIDENCE_CAP=5，首次发现顺序。"""
+    g = MergedGraph(persons={
+        "A": PersonAgg(name="A", chunk_ids={1}),
+        "B": PersonAgg(name="B", chunk_ids={2}),
+        "X": PersonAgg(name="X", chunk_ids={1, 2}),
+    })
+    ev_a = [{"chunk_id": 1, "chapter_id": 1, "text": f"a{i}"} for i in range(5)]
+    ev_b = [{"chunk_id": 2, "chapter_id": 2, "text": f"b{i}"} for i in range(5)]
+    g.relationships = {
+        ("A", "X", RelationshipType.friendship): RelAgg(
+            source="A", target="X", type=RelationshipType.friendship,
+            chunk_ids={1}, confidences=[0.8], evidence=ev_a),
+        ("B", "X", RelationshipType.friendship): RelAgg(
+            source="B", target="X", type=RelationshipType.friendship,
+            chunk_ids={2}, confidences=[0.7], evidence=ev_b),
+    }
+    apply_merges(g, {"B": "A"})
+    rel = g.relationships[("A", "X", RelationshipType.friendship)]
+    assert len(rel.evidence) == 5      # cap
+    assert rel.evidence[:5] == ev_a[:5]  # A 的 evidence 在前
+
+
+def test_apply_merges_self_loop_deleted():
+    """C_keep ↔ C_drop 合并后 self-loop 删除。"""
+    g = build_graph_for_merge()
+    apply_merges(g, {"B": "A"})
+    assert ("A", "A", RelationshipType.family) not in g.relationships
+
+
+def test_apply_merges_reverse_direction_redirect():
+    """target == C_drop 的边（X→B）也重定向。"""
+    g = MergedGraph(persons={
+        "A": PersonAgg(name="A", chunk_ids={1}),
+        "B": PersonAgg(name="B", chunk_ids={2}),
+        "X": PersonAgg(name="X", chunk_ids={1, 2}),
+    })
+    g.relationships = {
+        ("X", "B", RelationshipType.enmity): RelAgg(
+            source="X", target="B", type=RelationshipType.enmity,
+            chunk_ids={2}, confidences=[0.5], evidence=[]),
+    }
+    apply_merges(g, {"B": "A"})
+    assert ("X", "B", RelationshipType.enmity) not in g.relationships
+    assert ("X", "A", RelationshipType.enmity) in g.relationships
+
+
+def test_apply_merges_multiple_drops_chain_independent():
+    """merge_map 多项（B→A、C→A）各自独立应用；不做传递合并。"""
+    g = MergedGraph(persons={
+        "A": PersonAgg(name="A", chunk_ids={1}),
+        "B": PersonAgg(name="B", chunk_ids={2}),
+        "C": PersonAgg(name="C", chunk_ids={3}),
+    })
+    g.relationships = {}
+    apply_merges(g, {"B": "A", "C": "A"})
+    assert set(g.persons) == {"A"}
+    assert g.persons["A"].chunk_ids == {1, 2, 3}
+    assert g.persons["A"].aliases == ["B", "C"]
+
+
+def test_apply_merges_unknown_keep_noop():
+    """merge_map 引用不存在的 canonical → 安全跳过（防御）。"""
+    g = MergedGraph(persons={
+        "A": PersonAgg(name="A", chunk_ids={1}),
+    })
+    apply_merges(g, {"不存在": "A"})
+    assert set(g.persons) == {"A"}

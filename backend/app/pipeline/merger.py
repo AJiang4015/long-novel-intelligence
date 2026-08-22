@@ -92,3 +92,71 @@ def apply_aliases(graph: MergedGraph, canonical_aliases: dict[str, list[str]]) -
             seen.add(a)
             aliases.append(a)
         person.aliases = aliases
+
+
+def apply_merges(graph: MergedGraph, merge_map: dict[str, str]) -> None:
+    """把 b1 的 merge_map（C_drop -> C_keep）应用到内存 MergedGraph（V0.2.3-b2）。
+
+    - 输入：aliases 已由 apply_aliases 完成的 MergedGraph + merge_map（唯一额外输入）；
+      不接收 resolver.canonical_aliases，不在此重建 aliases；
+    - C_keep 保留（canonical 不变）；C_drop 从 persons 移除；
+    - aliases 合并顺序：C_keep 原 aliases → C_drop aliases → C_drop canonical name；
+      canonical 不进入 aliases；去重；保持首次确认顺序；
+    - chunk_ids/chapters 并集；mention_count = len(union)；
+    - RELATES_TO：source/target == C_drop 重定向到 C_keep；重定向后同 key 合并
+      （chunk_ids 并集、confidences 拼接、evidence 保序 cap EVIDENCE_CAP）；self-loop 删除；
+    - 防御：merge_map 引用不存在的 canonical 安全跳过。
+    """
+    # 0) 校验并收集有效 merge（C_keep / C_drop 都必须存在）
+    valid: dict[str, str] = {}
+    for drop, keep in merge_map.items():
+        if drop in graph.persons and keep in graph.persons and drop != keep:
+            valid[drop] = keep
+
+    if not valid:
+        return
+
+    # 1) PersonAgg 合并（先收集，再统一写回，避免迭代中修改 persons）
+    merged_persons: dict[str, PersonAgg] = dict(graph.persons)
+    for drop, keep in valid.items():
+        target = merged_persons[keep]
+        source = merged_persons[drop]
+        target.chunk_ids |= source.chunk_ids
+        target.chapters |= source.chapters
+        target.mention_count = len(target.chunk_ids)
+        # aliases：C_keep 原序 → C_drop aliases → C_drop name（去重、canonical 不进）
+        seen = set(target.aliases)
+        for a in source.aliases:
+            if a == keep or a in seen:
+                continue
+            seen.add(a)
+            target.aliases.append(a)
+        if drop != keep and drop not in seen:
+            target.aliases.append(drop)
+        del merged_persons[drop]
+    graph.persons = merged_persons
+
+    # 2) RELATES_TO 重定向 + 同 key 聚合 + self-loop 删除
+    new_rels: dict[tuple[str, str, RelationshipType], RelAgg] = {}
+    for (src, tgt, rtype), rel in graph.relationships.items():
+        nsrc = valid.get(src, src)   # src == drop → keep
+        ntgt = valid.get(tgt, tgt)
+        if nsrc == ntgt:
+            continue  # self-loop 删除
+        key = (nsrc, ntgt, rtype)
+        existing = new_rels.get(key)
+        if existing is None:
+            new_rels[key] = RelAgg(
+                source=nsrc, target=ntgt, type=rtype,
+                chunk_ids=set(rel.chunk_ids),
+                confidences=list(rel.confidences),
+                evidence=list(rel.evidence),
+            )
+        else:
+            existing.chunk_ids |= rel.chunk_ids
+            existing.confidences.extend(rel.confidences)
+            for item in rel.evidence:
+                if len(existing.evidence) >= EVIDENCE_CAP:
+                    break
+                existing.evidence.append(item)
+    graph.relationships = new_rels
