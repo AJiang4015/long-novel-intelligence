@@ -36,20 +36,32 @@ class Neo4jDB:
                 novel_id=novel_id, title=title, chapters=chapters_json,
             ).consume()
 
-    def upsert_graph(self, novel_id: str, merged) -> None:
-        """merged: pipeline.merger.MergedGraph"""
-        with self._driver.session() as session:
+    def upsert_graph(self, novel_id: str, merged, merge_map: dict[str, str] | None = None) -> None:
+        """merged: pipeline.merger.MergedGraph；merge_map: C_drop -> C_keep（V0.2.3-b2）。
+
+        - 全部写入在单个 Neo4j 事务内完成（execute_write unit_of_work）：
+          ① C_keep Person upsert/update（id 不变）
+          ② 全部 RELATES_TO upsert（端点 name 匹配）
+          ③ C_drop Person DETACH DELETE（顺带删除其旧边）
+        - merge_map 仅用于事务阶段识别 C_drop 并删除；不在此执行任何 canonical merge 逻辑；
+        - 任一步抛异常 → 整个事务 rollback，不产生半合并状态。
+        """
+        drop_names = set(merge_map or {})          # merge_map 的 keys 才是 C_drop（values 是 C_keep）
+
+        def _unit_of_work(tx):
+            # ① C_keep / 全部 Person upsert（含合并后数据；C_drop 先更新后删除，避免引用冲突）
             for name, person in merged.persons.items():
-                session.run(
+                tx.run(
                     """MERGE (p:Person {novel_id: $novel_id, name: $name})
                        ON CREATE SET p.id = $person_id
                        SET p.mention_count = $mention_count, p.chapters = $chapters, p.aliases = $aliases""",
                     novel_id=novel_id, name=name, person_id=str(uuid4()),
                     mention_count=person.mention_count, chapters=sorted(person.chapters),
                     aliases=person.aliases,
-                ).consume()
+                )
+            # ② RELATES_TO upsert（merged 内已无 C_drop 端点——apply_merges 已重定向）
             for (source, target, rtype), rel in merged.relationships.items():
-                session.run(
+                tx.run(
                     """MATCH (a:Person {novel_id: $novel_id, name: $source})
                        MATCH (b:Person {novel_id: $novel_id, name: $target})
                        MERGE (a)-[r:RELATES_TO {novel_id: $novel_id, source: $source, target: $target, type: $type}]->(b)
@@ -58,7 +70,16 @@ class Neo4jDB:
                     novel_id=novel_id, source=source, target=target, type=rtype.value,
                     chunk_ids=sorted(rel.chunk_ids), weight=rel.weight,
                     confidence=rel.confidence, evidence=json.dumps(rel.evidence, ensure_ascii=False),
-                ).consume()
+                )
+            # ③ C_drop 删除（merge_map 的 keys；顺带清掉其旧边）
+            for drop in drop_names:
+                tx.run(
+                    "MATCH (p:Person {novel_id: $novel_id, name: $drop}) DETACH DELETE p",
+                    novel_id=novel_id, drop=drop,
+                )
+
+        with self._driver.session() as session:
+            session.execute_write(_unit_of_work)
 
     def get_novel(self, novel_id: str) -> dict | None:
         with self._driver.session() as session:
