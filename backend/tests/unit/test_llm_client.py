@@ -1,7 +1,16 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.llm import AliasJudgeResult, ExtractionResult, PendingMention, RelationshipType
+from app.schemas.llm import (
+    AliasJudgeResult,
+    BridgeEvidence,
+    ExtractionResult,
+    MergeJudgeResult,
+    MergePair,
+    MergePairSide,
+    PendingMention,
+    RelationshipType,
+)
 
 
 def test_extraction_result_valid():
@@ -213,4 +222,30 @@ def test_judge_aliases_bad_json_is_validation_error():
 def test_judge_aliases_retryable_429():
     client = make_client([fake_response(429), fake_response(200, {"choices": [{"message": {"content": '{"resolutions": []}'}}]})])
     client.judge_aliases("文本", [])
+    assert client._client.calls == 2
+
+
+def test_judge_merges_parses_result():
+    client = make_client([fake_response(200, {"choices": [{"message": {"content": (
+        '{"merges": [{"a": "大儿子", "b": "大老", "merge": true, "confidence": 0.9}]}'
+    )}}]})])
+    pairs = [MergePair.model_validate({
+        "a": {"canonical": "大儿子", "first_seen_chunk": 6, "mention_count": 2},
+        "b": {"canonical": "大老", "first_seen_chunk": 9, "mention_count": 1},
+    })]
+    result = client.judge_merges(pairs)
+    assert isinstance(result, MergeJudgeResult)
+    assert result.merges[0].merge is True
+
+
+def test_judge_merges_bad_json_is_validation_error():
+    client = make_client([fake_response(200, {"choices": [{"message": {"content": "不是JSON"}}]})])
+    with pytest.raises(Exception) as exc:
+        client.judge_merges([])
+    assert "validation_error" in str(exc.value)
+
+
+def test_judge_merges_retryable_429():
+    client = make_client([fake_response(429), fake_response(200, {"choices": [{"message": {"content": '{"merges": []}'}}]})])
+    client.judge_merges([])
     assert client._client.calls == 2
