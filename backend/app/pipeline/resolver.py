@@ -24,8 +24,19 @@ class EntityResolver:
         self.canonical_aliases: dict[str, list[str]] = {}  # canonical → [别名]，保序
         self._index: dict[str, set[str]] = {}         # canonical → matched_names（去重）
 
+        # ---- V0.2.3-b1：canonical metadata + merge decision（纯 decision，不改上述状态）----
+        self.merge_evidence: list[dict] = []          # 桥接 mention 旁路证据
+        self.merge_map: dict[str, str] = {}           # C_drop -> C_keep（b1 产出，不用于改写 known）
+        self._first_seen: dict[str, int] = {}         # canonical -> 首次确立 canonical 的 chunk_id
+        self._canonical_chunks: dict[str, set[int]] = {}    # canonical -> 出现过的 chunk_id 集合
+        self._canonical_chapters: dict[str, set[int]] = {}  # canonical -> 出现过的 chapter_id 集合
+        self._current_chunk_id: int = 0
+        self._current_chapter_id: int = 0
+
     # ---- 公开 ----
     def resolve(self, chunk: Chunk, result: ExtractionResult) -> tuple[ExtractionResult, bool]:
+        self._current_chunk_id = chunk.chunk_id
+        self._current_chapter_id = chunk.chapter_id
         pending: list[PendingMention] = []
         resolved_chars: list = []
         resolved_rels: list = []
@@ -58,6 +69,22 @@ class EntityResolver:
                 "confidence": r.confidence,
             })
 
+        # ---- V0.2.3-b1：桥接 mention 旁路收集（纯观察，不改任何状态）----
+        established = {c for c in self.known if self.known[c] == c}
+        for p in pending:
+            hits = [c.canonical for c in p.candidates if c.canonical in established]
+            if len(hits) >= 2:
+                for i in range(len(hits)):
+                    for j in range(i + 1, len(hits)):
+                        self.merge_evidence.append({
+                            "mention": p.mention,
+                            "candidates": list(hits),
+                            "pair": [hits[i], hits[j]],
+                            "chunk_id": chunk.chunk_id,
+                            "chapter_id": chunk.chapter_id,
+                            "text": chunk.text,
+                        })
+
         failed = False
         if pending:
             try:
@@ -76,6 +103,12 @@ class EntityResolver:
             for rel in resolved_rels:
                 rel["source"] = name_map.get(rel["source"], rel["source"])
                 rel["target"] = name_map.get(rel["target"], rel["target"])
+
+        # V0.2.3-b1：canonical 出现统计（轻量 metadata，供 merge judge 输入）
+        for c in resolved_chars:
+            canon = c["name"]
+            self._canonical_chunks.setdefault(canon, set()).add(chunk.chunk_id)
+            self._canonical_chapters.setdefault(canon, set()).add(chunk.chapter_id)
 
         resolved = ExtractionResult.model_validate({
             "characters": resolved_chars,
@@ -193,6 +226,8 @@ class EntityResolver:
         self.known[name] = name
         self.canonical_aliases.setdefault(name, [])
         self._index.setdefault(name, set()).add(name)
+        # V0.2.3-b1：首次确立 canonical 的 chunk_id（非原文首次出现位置）
+        self._first_seen.setdefault(name, self._current_chunk_id)
 
     def _add_alias(self, canonical: str, alias: str):
         if alias == canonical:
@@ -204,3 +239,90 @@ class EntityResolver:
         self._index[canonical].add(alias)
         if alias not in self.canonical_aliases[canonical]:
             self.canonical_aliases[canonical].append(alias)  # 首次确认顺序
+
+    # ---- V0.2.3-b1：canonical merge decision（纯 decision，基于 snapshot，不修改 known/_index/canonical_aliases）----
+
+    def decide_merges(self, merge_judge, confidence_threshold: float = 0.5) -> dict:
+        """基于 resolve 完成后的 canonical metadata 快照构建 merge_map。
+
+        - 纯 decision：不修改 known/_index/canonical_aliases；不提前应用 merge_map；
+        - 所有 pair 基于同一份快照独立判定，不做传递合并；
+        - judge failure / confidence 低于阈值 → 不 merge（计入统计）。
+        返回 {"merge_map", "stats", "merge_failures"}。
+        """
+        from app.schemas.llm import BridgeEvidence, MergePair, MergePairSide
+
+        # 1) pair 去重：frozenset(pair) -> evidence 列表（同 pair 只判一次）
+        pair_evidences: dict[frozenset, list[dict]] = {}
+        for ev in self.merge_evidence:
+            key = frozenset(ev["pair"])
+            pair_evidences.setdefault(key, []).append(ev)
+
+        # 2) 从 canonical snapshot 构造 judge 输入（不因其他 pair 的判定变化）
+        pairs_input: list[MergePair] = []
+        for key, evs in pair_evidences.items():
+            c1, c2 = tuple(key)
+            if c1 not in self.known or c2 not in self.known:
+                continue
+            sides = []
+            for c in (c1, c2):
+                sides.append(MergePairSide(
+                    canonical=c,
+                    aliases=list(self.canonical_aliases.get(c, [])),
+                    first_seen_chunk=self._first_seen.get(c, 0),
+                    mention_count=len(self._canonical_chunks.get(c, set())),
+                    chapters=sorted(self._canonical_chapters.get(c, set())),
+                ))
+            pairs_input.append(MergePair(
+                a=sides[0], b=sides[1],
+                bridge_evidence=[BridgeEvidence(
+                    chunk_id=e["chunk_id"], chapter_id=e["chapter_id"],
+                    mention=e["mention"], text=e["text"],
+                ) for e in evs],
+            ))
+
+        stats = {"merge_candidate_pairs": len(pairs_input),
+                 "merged_pairs": 0, "rejected_pairs": 0, "failed_pairs": 0}
+        merge_failures: list[dict] = []
+
+        if not pairs_input:
+            return {"merge_map": dict(self.merge_map),
+                    "stats": {"entity_resolution": stats}, "merge_failures": merge_failures}
+
+        # 3) batch merge judge
+        try:
+            result = merge_judge(pairs_input)
+        except Exception as exc:
+            stats["failed_pairs"] = len(pairs_input)
+            merge_failures.append({"error": f"{type(exc).__name__}:{exc}"})
+            return {"merge_map": dict(self.merge_map),
+                    "stats": {"entity_resolution": stats}, "merge_failures": merge_failures}
+
+        # 4) 过滤 + 构建 merge_map（C_keep = first_seen 更小；相同按 canonical 字符串升序）
+        valid_keys = {frozenset((p.a.canonical, p.b.canonical)) for p in pairs_input}
+        for d in result.merges:
+            key = frozenset((d.a, d.b))
+            if key not in valid_keys:
+                continue  # 约束：a/b 必须来自输入 pairs
+            if not d.merge or d.confidence < confidence_threshold:
+                stats["rejected_pairs"] += 1
+                continue
+            c1, c2 = tuple(key)
+            # 确定性 keep：first_seen 更小者；相同 → canonical 字符串升序较小者
+            if (self._first_seen.get(c1, 0), c1) <= (self._first_seen.get(c2, 0), c2):
+                keep, drop = c1, c2
+            else:
+                keep, drop = c2, c1
+            self.merge_map[drop] = keep
+            stats["merged_pairs"] += 1
+
+        return {"merge_map": dict(self.merge_map),
+                "stats": {"entity_resolution": stats}, "merge_failures": merge_failures}
+
+    def resolve_merge_root(self, name: str) -> str:
+        """沿 merge_map 解析最终 keep（仅查询，不创建新合并）。"""
+        seen: set[str] = set()
+        while name in self.merge_map and name not in seen:
+            seen.add(name)
+            name = self.merge_map[name]
+        return name

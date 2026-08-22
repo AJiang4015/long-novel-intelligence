@@ -190,7 +190,9 @@ def test_many_canonicals_no_o2():
     r = EntityResolver(judge=judge_null)
     for i in range(1, 101):
         r.resolve(make_chunk(i, text=f"人物{i}在河边"), extraction([f"人物{i}"]))
+    # resolve 过程中共享字符弱召回会自然产生大量 pair evidence；清空后
     # 注入 1 个桥接 evidence → 只判 1 个 pair，不触发全量比较
+    r.merge_evidence.clear()
     judge = _MergeJudge(mapping={frozenset(("人物1", "人物2")): True})
     r.merge_evidence.append({
         "mention": "桥", "candidates": ["人物1", "人物2"], "pair": ["人物1", "人物2"],
@@ -226,11 +228,13 @@ def test_merge_evidence_structure_and_3way_pairs():
     # chunk 4：提取 B/C（known）+ 桥（未知），原文含 a1（A 的 alias）→ text confirmed 命中 A
     # 桥 的候选同时含 A/B/C（established）→ 生成 3 条 pair evidence
     r.resolve(make_chunk(4, text="a1和B还有C都在河边"), extraction(["B", "C", "桥"]))
-    pairs = {frozenset(ev["pair"]) for ev in r.merge_evidence}
-    assert len(r.merge_evidence) == 3          # (A,B)(A,C)(B,C)
+    # 只统计 chunk 4 的 evidence（chunk 3 提取 C 时 weak 候选可能额外产生 (A,B)，不属于本场景）
+    evs = [ev for ev in r.merge_evidence if ev["chunk_id"] == 4]
+    pairs = {frozenset(ev["pair"]) for ev in evs}
+    assert len(evs) == 3            # (A,B)(A,C)(B,C)
     assert frozenset(("A", "B")) in pairs
     assert frozenset(("A", "C")) in pairs
     assert frozenset(("B", "C")) in pairs
-    ev = r.merge_evidence[0]
+    ev = evs[0]
     assert set(ev) >= {"mention", "candidates", "pair", "chunk_id", "chapter_id", "text"}
     assert ev["chunk_id"] == 4
