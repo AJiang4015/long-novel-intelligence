@@ -128,6 +128,15 @@ class FakeLLMClient:
         return AliasJudgeResult.model_validate(
             {"resolutions": [{"mention": p.mention, "resolves_to": None} for p in pending]})
 
+    def judge_merges(self, pairs):
+        """V0.2.3-b2：canonical merge judge mock——无合并（返回空 merges）。
+
+        novels._run_ingest 接线后 ingest 会调用 judge_merges；既有测试场景
+        不产生 canonical pair（各 chunk 人物独立），返回空即可。
+        """
+        from app.schemas.llm import MergeJudgeResult
+        return MergeJudgeResult.model_validate({"merges": []})
+
 
 @pytest.fixture(scope="module")
 def client(db):
