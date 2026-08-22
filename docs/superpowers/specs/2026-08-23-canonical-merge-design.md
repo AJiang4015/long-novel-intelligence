@@ -195,6 +195,12 @@ merged_chunk_ids = A.chunk_ids ∪ B.chunk_ids
 mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_count
 ```
 
+**已确认实现（2026-08-23 评审）**：
+- `merge_extractions` 聚合阶段同步收集 `chunk_ids`（每个 resolved extraction 将 chunk_id 加入对应 canonical 的 chunk_ids，同 chunk 内重复只保留一次）
+- `mention_count` 语义保持 = len(chunk_ids)
+- `apply_merges(graph: MergedGraph, merge_map: dict[str, str])`：只读 graph 内已完成 canonical 化的 PersonAgg.aliases，不接收 resolver.canonical_aliases；merge_map 是唯一额外输入；不在 apply_merges 内重建 aliases
+- 调用顺序固定：`resolve → merge_extractions → apply_aliases → apply_merges → db.upsert_graph`
+
 **新增测试锁死**：A/B 同 chunk 出现时，合并后 mention_count 只增加 1。
 
 ### 4.3 aliases 合并（顺序规则）
@@ -223,6 +229,8 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 **最小改动方案**：将写入改为单个显式事务（任选其一，实现时定）：
 - 方案 A（推荐）：`session.execute_write(unit_of_work)`——把 C_keep upsert、边 upsert、C_drop 删除包进同一个 unit_of_work 函数，内部共享一个 tx
 - 方案 B：`with session.begin_transaction() as tx:` 显式 begin/commit/rollback
+
+**已确认实现选择（2026-08-23 评审）**：采用 **方案 A `session.execute_write(unit_of_work)`**，不用 begin_transaction。`upsert_graph(novel_id, merged, merge_map)` 签名扩展，unit_of_work(tx) 内依次：C_keep Person upsert/update → 全部重定向后 RELATES_TO upsert → C_drop Person DETACH DELETE；三步共享同一 tx，任一步抛异常整体 rollback，不产生半合并状态；不创建新 canonical Person；只删 C_drop；C_keep 的 Person.id 不得变化。
 
 **事务内顺序（保证 id 保留与引用完整）**：
 1. C_keep Person upsert（更新 aliases / chunk_ids / mention_count / chapters；`MERGE (novel_id, name)` 已存在 → **id 不变**）
@@ -269,11 +277,11 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 | 层 | 职责（b1：纯 decision，只读 resolver） | 职责（b2：应用 merge_map，唯一改状态处） |
 |---|---|---|
 | **resolver.py** | 新增：established 快照、bridge evidence 旁路收集、first_seen_chunk / mention_count / chapters 轻量状态（只读附加，不改 known/_index/canonical_aliases）、merge judge 调用、merge_map 构建 + `resolve_merge_root` | 提供 merge_map + 更新后的 canonical_aliases 给 apply_aliases（b2 才允许更新 alias 结构） |
-| **merger.py** | 不变 | PersonAgg 加 `chunk_ids`；新增 `apply_merges(graph, merge_map)`：PersonAgg 合并、aliases 合并、RELATES_TO 重定向/聚合/self-loop 删除 |
-| **db/neo4j.py** | 不变 | `upsert_graph` 改造为单事务（execute_write / begin_transaction），新增 C_drop 删除步骤 |
+| **merger.py** | 不变 | PersonAgg 加 `chunk_ids`（merge_extractions 同步收集）；新增 `apply_merges(graph, merge_map)`：PersonAgg 合并、aliases 合并、RELATES_TO 重定向/聚合/self-loop 删除（**唯一应用 merge_map 处**，只读 graph 内 aliases） |
+| **db/neo4j.py** | 不变 | `upsert_graph(novel_id, merged, merge_map)` 扩展：内部 `session.execute_write(unit_of_work)` 单事务（C_keep update → 边 upsert → C_drop DETACH DELETE） |
 | **schemas/llm.py** | 新增 MergeJudgeResult / MergePair 契约 | 不变 |
 | **llm_client.py** | 新增 `judge_merges(pairs)`（复用 429/5xx 重试模式） | 不变 |
-| **novels.py** | `_run_ingest` 接线：resolve → b1 → stats | 接线：b2 落库；merge stats 写入 job stats |
+| **novels.py** | `_run_ingest` 接线：resolve → b1 → stats | 接线（已确认 2026-08-23）：`resolve` 全部 chunks → `resolver.decide_merges(llm_client.judge_merges, threshold)` → `merge_extractions(resolved)` → `apply_aliases(merged, canonical_aliases)` → `apply_merges(merged, merge_map)` → `db.upsert_graph(novel_id, merged)`；merge stats（candidate/merged/rejected/failed）写入 job stats，merge_failures 不进 failed_blocks |
 
 ## 6. merge_map 生命周期
 
