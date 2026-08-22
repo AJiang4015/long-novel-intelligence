@@ -63,9 +63,9 @@ def test_hard_filter_invalid(name):
 
 @pytest.mark.parametrize("name", ["弟弟", "妇人", "年青人", "哥哥", "死去的人", "老头子"])
 def test_generic_not_hard_filtered(name):
-    """GENERIC 不得被 hard rules 过滤——只能由 LLM category 分类，resolver 决策。"""
+    """GENERIC 不得被 hard rules 直接过滤——只能由 LLM category 或 hygiene 词表分类，resolver 决策。"""
     assert not is_hard_filtered(name)
-    assert classify_mention(name) is None   # hard rules 不返回 GENERIC
+    assert classify_mention(name) in (None, MentionCategory.GENERIC)   # RC3：弟弟/哥哥 由词表归 GENERIC
 
 
 @pytest.mark.parametrize("name", ["岳云二老", "天保大老", "天保大人", "傩送二老"])
@@ -315,3 +315,144 @@ def test_rc2_counting_single_entry_when_char_and_rel():
     assert r.hygiene_stats["collective_filtered"] == 1   # 不是 2
     assert "两个儿子" not in [c.name for c in out.characters]
     assert out.relationships == []
+
+
+# ---------- V0.2.4-b RC3：RELATIONAL_GENERIC 词表 ----------
+
+def test_rc3_brother_no_candidate_not_registered():
+    """RC3：兄弟 无候选 → GENERIC → 不注册 canonical。"""
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(2), extraction(["兄弟"]))
+    assert "兄弟" not in r.known
+    assert "兄弟" not in r._index
+    assert "兄弟" not in r.canonical_aliases
+    assert "兄弟" not in [c.name for c in out.characters]   # RC2 语义：不输出
+    assert r.hygiene_stats["generic_filtered"] == 1   # 无候选丢弃计数
+
+
+def test_rc3_brother_with_candidate_judge_true_becomes_alias():
+    """RC3：兄弟 有候选 + judge=true → 成为 alias。"""
+    seen = {}
+    def j(text, pending):
+        seen["pending"] = [(p.mention, [c.canonical for c in p.candidates]) for p in pending]
+        return AliasJudgeResult.model_validate({
+            "resolutions": [{"mention": p.mention, "resolves_to": "傩送" if p.mention == "兄弟" else None}
+                            for p in pending]})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1), extraction(["傩送"]))
+    out, _ = r.resolve(make_chunk(2), extraction(["兄弟"]))
+    assert r.known.get("兄弟") == "傩送"   # judge 吸收为 alias
+    assert "兄弟" in r.canonical_aliases["傩送"]
+    assert r.hygiene_stats["generic_filtered"] == 0   # 成功 alias 不计 filtered
+
+
+def test_rc3_brother_judge_null_not_registered():
+    """RC3：兄弟 有候选但 judge=null → 不注册、不成 alias。"""
+    r = EntityResolver(judge=judge_null)   # judge_null 全 null
+    r.resolve(make_chunk(1), extraction(["傩送"]))
+    out, _ = r.resolve(make_chunk(2), extraction(["兄弟"]))
+    assert "兄弟" not in r.known
+    assert "兄弟" not in r.canonical_aliases
+    assert "兄弟" not in r._index
+
+
+def test_rc3_didi_still_alias_resolution():
+    """RC3：弟弟 有候选 + judge=true → 仍允许 alias resolution（→傩送）。"""
+    def j(text, pending):
+        return AliasJudgeResult.model_validate({
+            "resolutions": [{"mention": p.mention, "resolves_to": "傩送" if p.mention == "弟弟" else None}
+                            for p in pending]})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1), extraction(["傩送"]))
+    out, _ = r.resolve(make_chunk(2), extraction(["弟弟"]))
+    assert r.known.get("弟弟") == "傩送"
+    assert "弟弟" in r.canonical_aliases["傩送"]
+
+
+def test_rc3_furen_still_alias_resolution():
+    """RC3：妇人 有候选 + judge=true → 仍允许 alias resolution（→母亲）。"""
+    def j(text, pending):
+        return AliasJudgeResult.model_validate({
+            "resolutions": [{"mention": p.mention, "resolves_to": "母亲" if p.mention == "妇人" else None}
+                            for p in pending]})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1), extraction(["母亲"]))
+    out, _ = r.resolve(make_chunk(2), extraction(["妇人"]))
+    assert r.known.get("妇人") == "母亲"
+    assert "妇人" in r.canonical_aliases["母亲"]
+
+
+def test_rc3_father_mother_grandfather_not_filtered():
+    """RC3：父亲/母亲/祖父 不进词表 → 可注册 canonical（正文真实人物）。"""
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(4), extraction(["祖父"]))
+    assert r.known.get("祖父") == "祖父"   # 正常注册
+    r2 = EntityResolver(judge=judge_null)
+    r2.resolve(make_chunk(4), extraction(["父亲"]))
+    assert r2.known.get("父亲") == "父亲"
+    r3 = EntityResolver(judge=judge_null)
+    r3.resolve(make_chunk(4), extraction(["母亲"]))
+    assert r3.known.get("母亲") == "母亲"
+
+
+def test_rc3_brother_no_state_pollution():
+    """RC3：兄弟 无候选 → 不污染 known/_index/canonical_aliases。"""
+    r = EntityResolver(judge=judge_null)
+    r.resolve(make_chunk(2), extraction(["兄弟"]))
+    assert "兄弟" not in r.known
+    assert "兄弟" not in r._index
+    assert "兄弟" not in r.canonical_aliases
+
+
+def test_rc3_brother_not_in_merge_evidence():
+    """RC3：兄弟 无候选 → 不进入 merge_evidence 作为 established canonical。"""
+    r = EntityResolver(judge=judge_null)
+    r.resolve(make_chunk(2), extraction(["兄弟"]))
+    r.resolve(make_chunk(3), extraction(["天保"]))
+    assert all("兄弟" not in ev["mention"] and "兄弟" not in ev["pair"]
+               for ev in r.merge_evidence)
+
+
+def test_rc3_exact_word_match_no_substring():
+    """RC3 约束 2：精确词匹配——「顺顺的兄弟」不命中 兄弟 词表（描述性 mention 不误伤）。"""
+    from app.pipeline.hygiene import classify_mention
+    assert classify_mention("兄弟") == MentionCategory.GENERIC
+    assert classify_mention("顺顺的兄弟") is None   # 描述性，不命中精确词表
+
+
+def test_rc3_generic_overrides_llm_person_category():
+    """RC3 precedence：LLM 把 兄弟 标为 PERSON，但 hygiene 词表命中 → 强制 GENERIC，不注册 canonical。"""
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(2),
+                       extraction(["兄弟"], {"兄弟": MentionCategory.PERSON}))   # LLM 误标 PERSON
+    assert "兄弟" not in r.known          # 强制 GENERIC → 不注册
+    assert "兄弟" not in r._index
+    assert "兄弟" not in r.canonical_aliases
+    assert r.hygiene_stats["generic_filtered"] == 1   # 无候选丢弃计数
+
+
+def test_rc3_generic_overrides_llm_person_with_candidate_judge():
+    """RC3 precedence：LLM 标 PERSON + 词表命中 GENERIC → 有候选仍走 judge（不因 PERSON 直接注册）。"""
+    seen = {}
+    def j(text, pending):
+        seen["pending"] = [(p.mention, [c.canonical for c in p.candidates]) for p in pending]
+        return AliasJudgeResult.model_validate({
+            "resolutions": [{"mention": p.mention, "resolves_to": "傩送" if p.mention == "弟弟" else None}
+                            for p in pending]})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1), extraction(["傩送"]))
+    out, _ = r.resolve(make_chunk(2),
+                       extraction(["弟弟"], {"弟弟": MentionCategory.PERSON}))   # LLM 误标 PERSON
+    assert r.known.get("弟弟") == "傩送"   # 仍经 judge → alias（未被 PERSON 直接注册为 canonical）
+    assert seen["pending"][0][1] == ["傩送"]
+
+
+def test_rc3_collective_rc2_regression_unchanged():
+    """RC3 回归：两个儿子（COLLECTIVE）RC2 语义不变——仍不进 resolved.characters/merged.persons。"""
+    from app.pipeline.merger import merge_extractions
+    r = EntityResolver(judge=judge_null)
+    out, _ = r.resolve(make_chunk(1),
+                       extraction(["两个儿子"], {"两个儿子": MentionCategory.COLLECTIVE}))
+    assert "两个儿子" not in [c.name for c in out.characters]
+    merged = merge_extractions([(make_chunk(1), out)])
+    assert "两个儿子" not in merged.persons
