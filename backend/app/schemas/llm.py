@@ -13,8 +13,19 @@ class RelationshipType(str, Enum):
     other = "other"
 
 
+class MentionCategory(str, Enum):
+    """V0.2.4 mention 分类：extract 契约输出；None 时走 hygiene 规则兜底。"""
+    PERSON = "person"           # 专名（天保/傩送/翠翠）
+    GENERIC = "generic"         # 泛指称谓（年青人/妇人/哥哥/弟弟）
+    COLLECTIVE = "collective"   # 集合称谓（两个儿子/兄弟二人/父子三人）
+    DESCRIPTIVE = "descriptive" # 描述性称谓（翠翠的祖父）
+    COMPOSITE = "composite"     # 复合称谓（岳云二老/天保大老/天保大人）
+    INVALID = "invalid"         # 畸形（空/纯数字/符号/超长）
+
+
 class Character(BaseModel):
     name: str = Field(min_length=1, max_length=50)
+    category: MentionCategory | None = None   # V0.2.4：LLM 未输出 → None → hygiene 兜底
 
 
 class Relationship(BaseModel):
