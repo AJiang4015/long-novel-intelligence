@@ -198,7 +198,7 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 **已确认实现（2026-08-23 评审）**：
 - `merge_extractions` 聚合阶段同步收集 `chunk_ids`（每个 resolved extraction 将 chunk_id 加入对应 canonical 的 chunk_ids，同 chunk 内重复只保留一次）
 - `mention_count` 语义保持 = len(chunk_ids)
-- `apply_merges(graph: MergedGraph, merge_map: dict[str, str])`：只读 graph 内已完成 canonical 化的 PersonAgg.aliases，不接收 resolver.canonical_aliases；merge_map 是唯一额外输入；不在 apply_merges 内重建 aliases
+- `apply_merges(graph: MergedGraph, merge_map: dict[str, str])`：**输入明确为「aliases 已由 apply_aliases 完成的 MergedGraph + merge_map」**；只读 graph 内已完成 canonical 化的 PersonAgg.aliases，不接收 resolver.canonical_aliases，**不在 apply_merges 内重建 aliases**；merge_map 是唯一额外输入
 - 调用顺序固定：`resolve → merge_extractions → apply_aliases → apply_merges → db.upsert_graph`
 
 **新增测试锁死**：A/B 同 chunk 出现时，合并后 mention_count 只增加 1。
@@ -231,6 +231,8 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 - 方案 B：`with session.begin_transaction() as tx:` 显式 begin/commit/rollback
 
 **已确认实现选择（2026-08-23 评审）**：采用 **方案 A `session.execute_write(unit_of_work)`**，不用 begin_transaction。`upsert_graph(novel_id, merged, merge_map)` 签名扩展，unit_of_work(tx) 内依次：C_keep Person upsert/update → 全部重定向后 RELATES_TO upsert → C_drop Person DETACH DELETE；三步共享同一 tx，任一步抛异常整体 rollback，不产生半合并状态；不创建新 canonical Person；只删 C_drop；C_keep 的 Person.id 不得变化。
+
+**merge_map 在 db 层的职责边界（2026-08-23 评审补充）**：`upsert_graph` 收到的 `merge_map` **仅用于最终 Neo4j transaction 阶段识别 C_drop 并删除**；**不得在 db 层重新执行任何 canonical merge 逻辑**（合并已在内存 apply_merges 完成，db 层只做 C_keep 已合并数据的写入 + C_drop 删除）。
 
 **事务内顺序（保证 id 保留与引用完整）**：
 1. C_keep Person upsert（更新 aliases / chunk_ids / mention_count / chapters；`MERGE (novel_id, name)` 已存在 → **id 不变**）
@@ -295,10 +297,17 @@ mention_count = len(merged_chunk_ids)   # 禁止 A.mention_count + B.mention_cou
 | 环节 | 失败行为 |
 |---|---|
 | merge judge LLM 调用失败 / 校验失败 | 不 merge；计入 `stats.entity_resolution.failed_pairs` + `merge_failures`；不写 failed_blocks |
-| confidence < 阈值（可配置 `merge_confidence_threshold`，默认 0.5，非硬编码） | 不 merge；计入 rejected_pairs |
+| judge merge=false | 不 merge；计入 `rejected_pairs` |
+| judge merge=true 但 confidence < 阈值（可配置 `merge_confidence_threshold`，默认 0.5，非硬编码） | 不 merge；计入 `low_confidence_pairs` |
 | 批量中部分 pair 失败 | 只 merge 成功的 |
 | b2 单事务失败 | 整体回滚；job failed |
 | 传递冲突（A≈B, B≈C） | 不自动合并；除非 A/C 有独立 evidence 且 judge 通过 |
+
+**统计区分（2026-08-23 评审补充）**：`stats.entity_resolution` 内部语义明确三分——
+- `rejected_pairs`：judge 明确 merge=false
+- `low_confidence_pairs`：judge merge=true 但 confidence 未达 threshold
+- `failed_pairs`：LLM/validation 等执行失败
+本轮不要求扩展 API/DTO，仅内部语义清楚。
 
 ## 8. 本阶段明确不做（YAGNI）
 
