@@ -168,7 +168,9 @@ def test_descriptive_with_candidate_goes_to_judge():
                             for p in pending]})
     r = EntityResolver(judge=j)
     r.resolve(make_chunk(1), extraction(["祖父", "翠翠"]))
-    out, _ = r.resolve(make_chunk(2), extraction(["翠翠的祖父"], {"翠翠的祖父": MentionCategory.DESCRIPTIVE}))
+    # V0.2.6 P16-b：X的Y 限定式单次 alias 需 anchor 文本在场 → ch2 原文须含「翠翠」
+    out, _ = r.resolve(make_chunk(2, text="翠翠祖父翠翠的祖父"),
+                       extraction(["翠翠的祖父"], {"翠翠的祖父": MentionCategory.DESCRIPTIVE}))
     assert r.known.get("翠翠的祖父") == "祖父"
     assert "翠翠的祖父" in r.canonical_aliases["祖父"]
 

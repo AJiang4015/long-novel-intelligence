@@ -43,6 +43,7 @@ P16-a（题记污染）修复后，`父亲` 不再由题记注册 canonical；�
 - T6（2026-08-26 v2 修订）：评审发现 v1 阻断性矛盾——`finalize 兜底确认`会绕过 ≥2 gate 且使 M5 错吸被确认；修订为**无自动晋升**（observation 永不确认）+ **跨 canonical 冲突 → blocked** + 触发条件收窄（老船夫 等 descriptive epithet 不进机制）。
 - T7（2026-08-26 v3 修订）：评审发现 v2 残留漏洞——qualified 跨 chunk 重复误判仍可凑齐 ≥2 evidence（M16）；补齐 **anchor-mismatch 语义**：qualified + 锚点 ∉ 候选集 → 判定不可确认（不入 observation），M16 关闭。
 - T8（2026-08-26 v4 修订）：评审发现 v3 残留漏洞——`anchor ∈ candidates` 不能证明 resolves_to C 正确（anchor 是关系主体非目标，M17 反例：翠翠的父亲 候选 [翠翠,顺顺] judge→顺顺）；新增 **target 对齐判据**（C == anchor 的 canonical 或 C 名 == 核词），qualified 单次 alias 需「对齐 + anchor 在场」双条件，M17 关闭。
+- T9（2026-08-26 实现，TDD）：M1-M20 先红后绿；实现期三处修订——① 复合称谓**前缀**切分（岳云二老 若 岳云 非 known 回 bare）；② bare 触发收窄为**长辈称谓首字**（{父,爸,爹,母,妈,娘,婆,奶}，避免与 P17 冲突——晚辈称谓 大儿子/长子/次子 走 P17 路径）；③ anchor 文本在场含别名（_anchor_in_text，天保大老 的 anchor 别名「天保」在场视为在场）。全量：unit 207 / integration 15 全绿，P16-a/P17/RC2/RC3 零破坏。
 
 ## 6. Initial Hypothesis
 
@@ -110,8 +111,8 @@ Step 5  区分：吸收语义正确性（本次全对）vs 机制脆弱性（jud
 ## 15. Validation
 
 - mock 实证（已完成）：M1 单候选吸收成立；M5 错吸可复现（无防御）；M3/M4 多候选/null 时 judge 可正确。
-- 待实现后跑 M1-M17（deterministic）→ 全量回归（T-a/T-b/hygiene/resolver/integration 15）。关键用例：M5（qualified 错吸不可确认）、M11（1 证据无冲突也不 finalize 确认）、M12/M13（跨 canonical 冲突 blocked）、M16（anchor 连续缺席 + 跨 chunk 重复误判 → 不确认）、**M17（anchor 在场但 judge 选错 candidate → target-mismatch 不确认）**、M9（翠翠的祖父 核词对齐单次 alias）、M14（老船夫 不进机制）。
-- 真实评估验收指标：role alias 吸收正误率（爸爸/爹爹→顺顺 建立；父亲 不建立）；翠翠的父亲 类跨人物称谓持续被拦截；顺顺 类 sink canonical 不再扩大错吸。
+- ✅ **M1-M20（deterministic）全绿** → 全量回归（unit 207 / integration 15，P16-a/P17/RC2/RC3 零破坏）。关键用例：M5/M17（qualified 错吸 target-mismatch）、M11（无 finalize 绕过）、M12/M13（跨 canonical blocked）、M16（anchor 连续缺席不确认）、M18（对齐但 anchor 缺席不确认）、M19（anchor 无效 epithet 保护）、M20（复合 anchor 别名在场）。
+- 真实评估验收指标（待下次）：role alias 吸收正误率（爸爸/爹爹→顺顺 建立；父亲 不建立）；翠翠的父亲 类跨人物称谓持续被拦截；顺顺 类 sink canonical 不再扩大错吸；LLM category 覆盖（长辈称谓裸词是否被标 DESCRIPTIVE——P06 follow-up）。
 
 ## 16. Trade-offs
 

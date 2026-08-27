@@ -1,9 +1,9 @@
-# V0.2.6：P16-b 正文 relational-role alias 准入策略 — 设计文档（修订版 v4）
+# V0.2.6：P16-b 正文 relational-role alias 准入策略 — 设计文档（修订版 v4.2）
 
-- **日期**: 2026-08-26（v4 修订：qualified 安全路径改为「核词/anchor 对齐」判据，anchor ∈ candidates 不再作为安全依据，关闭 M17）
-- **版本**: V0.2.6（P16-b 专项，候选 A+B 细化，评审修订 v4）
-- **状态**: 设计评审中（未实现，不改任何代码）
-- **前置**: V0.2.5 封版（P16-a PASS / P17 PARTIAL / merge INCONCLUSIVE）；P018 诊断报告已确认机制
+- **日期**: 2026-08-26（v4.2：TDD 实现期修订——复合称谓前缀切分、长辈称谓首字触发收窄、anchor 文本在场含别名）
+- **版本**: V0.2.6（P16-b 专项，候选 A+B，已实现并全量回归通过：unit 207 / integration 15）
+- **状态**: 已实现（TDD：M1-M20 先红后绿；P16-a/P17/RC2/RC3 零破坏）
+- **前置**: V0.2.5 封版；P018 诊断报告；v4 设计评审通过
 - **相关**: [P018 记录](docs/problems/P018-relational-role-canonical-sink.md) / [V0.2.5 评估报告](docs/evaluation/2026-08-26-biancheng-v025-eval.md)
 
 ## 1. 背景与问题（诊断结论引用）
@@ -19,10 +19,12 @@ P16-b 根因（P018 诊断 + mock 实证）：**judge 层的 `resolves_to` 被�
 
 ## 2. 设计目标与边界
 
-**目标**：当 relational-role mention 指向不明确时，alias 注册需要**证据确认**；区分「角色称谓正确归属」与「跨人物错误吸收」。**核心不变式（v4）**：
+**目标**：当 relational-role mention 指向不明确时，alias 注册需要**证据确认**；区分「角色称谓正确归属」与「跨人物错误吸收」。**核心不变式（v4.1）**：
 1. <2 次独立证据的 bare alias 永不成立（无任何自动晋升路径，含全书末）；
 2. **qualified 的判定可确认性以「target 对齐」为前提**——judge 判定的 C 必须与 mention 的**核词或 anchor 对齐**，否则（target-mismatch）永不确定；anchor ∈ candidates 只说明锚点可参与判定，**不构成安全依据**（M17 反例）；
 3. alias 只来自两条路径：(a) judge 判定 + target 对齐 + anchor 在场（qualified 安全路径）；(b) bare 的 ≥2 跨 chunk 独立证据。无第三条路径。
+
+**Known Risk（headword 对齐，评审记录，不设结构防线）**：`C 名 == headword` 对齐在 **headword 本身已成为 canonical**（如「翠翠的父亲 → 父亲」且「父亲」是 canonical）时会放行——role headword 的同名 canonical 是否代表「该 role 的实体」**当前无法确定**。结构上不自动拒绝（无法判定 canonical 是否 role，且《边城》无「父亲 canonical」场景），**记录为明确 Known Risk**；若真实评估出现 role-headword canonical，走 P06/未来 role-canonical 识别，不在此轮处理。
 
 **必须保持**（安全基线）：
 - 爸爸/爹爹 → 顺顺、哥哥 → 大老、弟弟 → 二老：合法 alias 最终建立。
@@ -42,7 +44,7 @@ P16-b 根因（P018 诊断 + mock 实证）：**judge 层的 `resolves_to` 被�
 | kind | 判定规则（按优先级） | anchor | 核词 headword | 例 |
 |---|---|---|---|---|
 | `qualified` | ① `X的Y`（正则 `^(.{1,4})的(.{1,8})$`，X 非空） | X（若 X ∈ known 则有效；否则 anchor=None） | Y（"的"后全部） | 翠翠的父亲 → anchor 翠翠 / 核词 父亲；翠翠的祖父 → anchor 翠翠 / 核词 祖父 |
-| `qualified` | ② 复合称谓：name 长度 ≥2 且包含任一 known canonical/alias 名子串 | 最长 known 名子串 | mention 去掉 anchor 后的剩余部分 | 天保大老 → anchor 天保 / 核词 大老；翠翠祖父 → anchor 翠翠 / 核词 祖父；岳云二老 → anchor 岳云（若 known）/ 核词 二老 |
+| `qualified` | ② 复合称谓：name 以**前缀 known canonical/alias 名**开头（长度降序取最长） | 前缀名的 canonical | mention 去掉前缀后的剩余 | 天保大老 → anchor 天保 / 核词 大老；翠翠祖父 → anchor 翠翠 / 核词 祖父；二老爷 → anchor 二老（canonical 傩送）/ 核词 爷；**岳云二老 若 岳云 非 known → 无前缀 → 回 bare（走现有 judge 路径）** |
 | `bare` | 其余 | None | None | 父亲/爸爸/爹爹/祖父/母亲/老船夫… |
 
 **target 对齐（v4 核心判据，确定性、零 LLM、无 ontology、无词表）**：
@@ -55,13 +57,18 @@ aligned(C, anchor, headword) =
 - `翠翠的祖父 → 祖父`：C 名(祖父) == headword(祖父) → 对齐 ✓。
 - `天保大老 → 天保`：C == anchor(天保) → 对齐 ✓。
 
+**anchor 无效的 qualified（v4.1 修订）**：`X的Y` 的 X 或复合称谓的 known 子串**不在 known**（如 `白脸黑发的母亲`——X=白脸黑发 非 known 人物）→ anchor=None。此时**不走 bare 证据机制**，走 **headword 对齐路径**：`C 名 == headword` → alias（judge 路径，单次）；否则不可确认。理由：anchor 无效 = 限定词是修饰语而非人物锚点（epithet 限定式），target 由核词唯一锚定（白脸黑发的母亲 → 母亲），judge 判定可靠；推入 bare 会误伤这类合法 alias（M19 保护）。
+
 ### 3.2 触发条件（证据机制只对「需证据」的 role mention 生效）
 
 **`needs_evidence(mention)` 为 true**，当且仅当**同时满足**：
 
 1. `classify_role_mention(name).kind == bare`（qualified 不走证据机制，走 §4 对齐路径）；
 2. `classify_mention(name) != MentionCategory.GENERIC`（RC3 词表词不进本机制）；
-3. **LLM category == MentionCategory.DESCRIPTIVE**（仅 LLM 判「描述性称谓」的裸词才触发）。
+3. **LLM category == MentionCategory.DESCRIPTIVE**；
+4. **长辈称谓首字**：`name[0] ∈ {父,爸,爹,母,妈,娘,婆,奶}`（v4.2 收窄——结构规则，仅用于触发判定，不改变分类）。
+
+**v4.2 收窄理由（TDD 实现期发现）**：v4 的「bare 一律证据门槛」会把晚辈/平辈角色称谓（大儿子/长子/次子/第二个儿子——P17 一族）也纳入证据机制，与 P17「chunk 末重召回 + 单次 judge」冲突（T-b1/b2/b3 回归）。真实 sink 源（父亲/爸爸/爹爹→顺顺）均为**长辈称谓**；晚辈称谓跨人物风险低（大儿子=天保 专属）。故 bare 证据机制只作用于长辈称谓首字（8 字结构规则，非大规模词表），晚辈称谓保持 P17 路径。
 
 **明确排除**：
 - `老船夫`/`撑渡船的老头子`/`年青人`/`中年人` 等 **descriptive epithet**：LLM 通常判 PERSON/None → **不触发**，保持现有 alias 路径。
@@ -88,14 +95,17 @@ judge 判 mention -> C（resolves_to 有效）
     │
     ├─ qualified（anchor 有效）：
     │    ├─ target 对齐（C == anchor 的 canonical 或 C 名 == 核词）
-    │    │    ├─ anchor ∈ 候选集 → 正常 alias（安全路径，单次；翠翠的祖父→祖父 / 天保大老→天保）
-    │    │    └─ anchor ∉ 候选集 → 不可确认（anchor-mismatch；输出剔除，永不 alias）
+    │    │    ├─ anchor 文本在场（canonical 名或任一别名 ∈ chunk 原文）→ 正常 alias（安全路径，单次）
+    │    │    └─ anchor 缺席 → 不可确认（anchor-mismatch；M18；输出剔除，永不 alias）
     │    └─ target 不对齐 → 不可确认（target-mismatch；输出剔除，永不 alias）
     │         —— M17（anchor 在场但 judge 选错 candidate）、M5/M16 均由本条覆盖
+    │         —— 复合称谓 target == anchor 自身（天保大老→天保 / 二老爷→傩送）→ 单次 alias，无需 anchor 在场
     │
-    ├─ qualified 且 anchor 无效（X 非 known）─────────→ 按 bare 处理（若 category=DESCRIPTIVE 走证据路径）
+    ├─ qualified 且 anchor 无效（X 非 known，如 白脸黑发的母亲）：
+    │    ├─ C 名 == 核词 → 正常 alias（headword 对齐路径，单次；M19 保护 epithet 限定式）
+    │    └─ 否则 → 不可确认（target-mismatch；输出剔除）
     │
-    └─ bare（category=DESCRIPTIVE、非 GENERIC）───→ 证据路径：
+    └─ bare（category=DESCRIPTIVE、非 GENERIC、长辈称谓首字）───→ 证据路径：
         ├─ mention ∈ _role_blocked → 输出剔除；不 alias、不累计
         ├─ 已有 observation 指向 C' ≠ C（跨 canonical 冲突）→
         │    _role_blocked.add(mention)；全部 observation 作废；输出剔除
@@ -166,12 +176,16 @@ judge null / missing / exception：
 | M15 | 父亲（LLM category=None → PERSON fallback） | 不触发（D5 一致 Known Limitation）；保持现状 |
 | M16 | 同一 qualified role（翠翠的父亲）anchor 连续缺席候选、两个不同 chunk 均错误 resolves_to 同一 C（顺顺） | **必须不确认**：每次判定均 anchor-mismatch → 不入 observation → 永无 ≥2 证据 → 不入图 |
 | **M17（新增）** | **qualified anchor ∈ candidates，但 judge 错误选择另一 candidate**：翠翠的父亲，candidates=[翠翠,顺顺]，judge→顺顺 | **必须不确认**：target 不对齐（C=顺顺 ≠ anchor 翠翠，C 名≠核词 父亲）→ target-mismatch 不可确认 → 不入图（v3 的「anchor ∈ candidates → 安全 alias」被本条证伪并关闭） |
+| **M18（新增）** | **qualified + target 对齐 + anchor 缺席**：翠翠的祖父，anchor=翠翠，headword=祖父，judge→祖父，candidates=[祖父]（翠翠 ∉ candidates） | **不可确认、不 alias、不入图**（对齐通过但 anchor 缺席 → anchor-mismatch） |
+| **M19（新增）** | **anchor 无效限定式**：白脸黑发的母亲，anchor 白脸黑发 ∉ known（无效），headword=母亲，judge→母亲 | **保持 alias**（headword 对齐路径，v4.1 保护 epithet 限定式；不走 bare 证据机制） |
 
 **回归**：T-a 全量（P16-a）、T-b 全量（P17，deferred/unresolved 行为零变化）、test_hygiene（RC2/RC3）、test_resolver（既有 alias 路径）、integration 15。
 
 ## 8. Trade-offs（v4 修订）
 
-- **首次信息损失（无兜底补偿）**：bare role 首次 mention 输出剔除；若全书仅 1 次证据 → 永久不入图（父亲 场景）。「错确认防 sink」优先（v2/v3/v4 均无 finalize 兜底）。
+- **headword 对齐 Known Risk（v4.1 记录）**：`C 名 == headword` 对齐在 headword 本身成为 canonical（如「翠翠的父亲 → 父亲」且「父亲」是 canonical）时会放行——无法确定 role-headword canonical 的语义，**记录为 Known Risk，不设结构防线**（《边城》无「父亲 canonical」场景；若出现走 P06/未来 role-canonical 识别）。
+- **anchor 无效限定式的保护（v4.1）**：白脸黑发的母亲（anchor 非 known）走 headword 对齐而非 bare 证据机制——避免误伤 epithet 限定式合法 alias（M19）。
+- **首次信息损失（无兜底补偿）**：bare role 首次 mention 输出剔除；若全书仅 1 次证据 → 永久不入图（父亲 场景）。「错确认防 sink」优先（无 finalize 兜底）。
 - **父亲 不 alias 顺顺**：跨人物裸 role 不 sink（P16-b 核心目标）；「作父亲的」不入图。
 - **qualified 核词对齐的取舍**：
   - 合法场景保持：翠翠的祖父→祖父（核词对齐）、天保大老→天保（anchor 对齐）、翠翠祖父→祖父（核词对齐）。
@@ -193,7 +207,7 @@ judge null / missing / exception：
 
 ## 10. 后续
 
-- 实现前以 M1-M17 固化当前行为基线（先写测试，全红 → 实现 → 全绿）。
+- 实现前以 M1-M19 固化当前行为基线（先写测试，全红 → 实现 → 全绿）。
 - 实现范围：resolver 新增 `_role_observations/_role_confirmed/_role_blocked` + `classify_role_mention`（含核词提取）+ target 对齐 + anchor 在场判定 + evidence 分派；**无 novels.py 变更**。
 - 若真实评估显示 LLM category 覆盖不足（父亲 被标 PERSON 未触发）→ 走 P06 follow-up（category 质量），不擅自扩触发范围。
 - Group / 关系角色建模：留待未来（P16-b 不引入）。

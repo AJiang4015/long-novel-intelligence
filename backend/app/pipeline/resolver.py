@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -7,6 +8,13 @@ from app.schemas.llm import (AliasCandidate, AliasJudgeResult, ExtractionResult,
                              MentionCategory, PendingMention)
 
 RECALL_TOP_K = 5
+
+# V0.2.6 P16-b：X的Y 限定式结构（X=锚点候选，Y=核词）
+_ROLE_DE_RE = re.compile(r"^(.{1,4})的(.{1,8})$")
+# 长辈称谓首字（结构规则，仅用于 P16-b bare 触发判定；不改变任何分类、不加入 GENERIC）。
+# 真实 sink 源（父亲/爸爸/爹爹→顺顺）均为长辈称谓；晚辈/平辈称谓（大儿子/长子/次子/哥哥/弟弟）
+# 分别走 P17 deferred / RC3 路径，不进入证据机制。
+_SENIOR_ROLE_INITIALS = {"父", "爸", "爹", "母", "妈", "娘", "婆", "奶"}
 
 
 def _chars(s: str) -> set[str]:
@@ -34,6 +42,7 @@ class EntityResolver:
         self._canonical_chapters: dict[str, set[int]] = {}  # canonical -> 出现过的 chapter_id 集合
         self._current_chunk_id: int = 0
         self._current_chapter_id: int = 0
+        self._current_chunk_text: str = ""    # V0.2.6 P16-b：anchor 文本在场判定
         # V0.2.5-a：section 上下文（chunk 级；BODY 默认）
         self._current_section_type: SectionType = SectionType.BODY
         self._provisional: set[str] = set()      # 非正文注册、未获正文确认的 provisional canonical
@@ -41,6 +50,10 @@ class EntityResolver:
         # V0.2.5-b：chunk 级 deferred / unresolved（canonical 创建推迟到 chunk 末决策边界）
         self._deferred: list[str] = []           # BODY DESCRIPTIVE/COMPOSITE 无候选（待重召回）
         self._unresolved: set[str] = set()       # 无法确认 → 不注册（输出剔除、不入 merge_evidence）
+        # V0.2.6 P16-b：role alias 准入（bare 证据门槛 / qualified 对齐 + anchor 在场）
+        self._role_observations: dict[str, dict[str, set[int]]] = {}
+        self._role_confirmed: set[tuple[str, str]] = set()
+        self._role_blocked: set[str] = set()
         # V0.2.4：mention hygiene 统计（job stats 输出）
         self.hygiene_stats: dict[str, int] = {
             "collective_filtered": 0, "generic_filtered": 0,
@@ -57,6 +70,7 @@ class EntityResolver:
         self._current_chunk_id = chunk.chunk_id
         self._current_chapter_id = chunk.chapter_id
         self._current_section_type = chunk.section_type   # V0.2.5-a
+        self._current_chunk_text = chunk.text             # V0.2.6 P16-b：anchor 文本在场判定
         self._chunk_dropped = set()                       # V0.2.5-a：本 chunk 丢弃集合重置
         self._deferred = []                               # V0.2.5-b：本 chunk deferred 重置
         self._unresolved = set()                          # V0.2.5-b：本 chunk unresolved 重置
@@ -387,6 +401,7 @@ class EntityResolver:
     def _apply_judge(self, judge_result: AliasJudgeResult, pending: list[PendingMention]):
         valid_canonicals = {c.canonical for p in pending for c in p.candidates}
         valid_mentions = {p.mention for p in pending}
+        candidates_by_mention = {p.mention: p.candidates for p in pending}
         from app.pipeline.hygiene import classify_mention, is_hard_filtered
         for r in judge_result.resolutions:
             if r.mention not in valid_mentions:
@@ -404,6 +419,11 @@ class EntityResolver:
                 # V0.2.5-b：DESCRIPTIVE/COMPOSITE null → unresolved（不写 known）；
                 # PERSON/None → 既有 fail-safe（非正文 → -a provisional 语义）
                 self._register_or_unresolved(r.mention)
+                continue
+            # V0.2.6 P16-b：role alias 准入（bare 证据门槛 / qualified 对齐 + anchor 在场）
+            if self._role_alias_decision(
+                    r.mention, r.resolves_to, candidates_by_mention.get(r.mention, [])) == "drop":
+                self._unresolved.add(r.mention)   # 不可确认 → 输出剔除（不注册、不 alias、不入图）
                 continue
             # 有效 resolves_to → 既有 alias/resolution 语义（含 deferred 重召回后并入 pending 者）
             self.known[r.mention] = r.resolves_to
@@ -488,6 +508,93 @@ class EntityResolver:
             self.hygiene_stats["descriptive_unresolved"] += 1
         elif cat == MentionCategory.COMPOSITE:
             self.hygiene_stats["composite_unresolved"] += 1
+
+    def classify_role_mention(self, name: str) -> tuple[str, bool, str | None, str | None]:
+        """V0.2.6 P16-b：返回 (kind, has_de, anchor_canonical, headword)。
+
+        - qualified：① X的Y（has_de=True；anchor=X 的 canonical 若 X ∈ known 否则 None；headword=Y）
+          ② 复合称谓（has_de=False；仅取**前缀** known 名子串，headword=去前缀剩余）——
+          「岳云二老」若 岳云 非 known 则无前缀 → 回 bare（走现有 judge 路径）；
+        - bare：其余（anchor/headword 均为 None）。
+        确定性：known 前缀选择按（长度降序，字符串升序）排序。
+        """
+        m = _ROLE_DE_RE.match(name)
+        if m:
+            x, y = m.group(1), m.group(2)
+            return ("qualified", True, self.known.get(x), y)
+        for k in sorted(self.known, key=lambda s: (-len(s), s)):
+            if len(k) >= 2 and name.startswith(k):
+                headword = name[len(k):]
+                if headword:
+                    return ("qualified", False, self.known[k], headword)
+                break
+        return ("bare", False, None, None)
+
+    def _anchor_in_text(self, anchor: str) -> bool:
+        """V0.2.6 P16-b：anchor 文本在场 = canonical 名或其任一别名出现在 chunk 原文。
+
+        复合称谓（天保大老，anchor=天保→大儿子）的文本以别名形式出现（「天保」）时
+        仍视为在场（strong 层真实语境）；weak 子串召回不参与本判定。
+        """
+        if anchor in self._current_chunk_text:
+            return True
+        return any(n in self._current_chunk_text for n in self._index.get(anchor, set()))
+
+    def _role_alias_decision(self, mention: str, target: str,
+                             candidates: list[AliasCandidate]) -> str:
+        """V0.2.6 P16-b：返回 "alias"（允许注册）或 "drop"（不可确认 → 输出剔除）。
+
+        调用方保证 target 来自候选且非 hard-filtered。
+        - qualified：target 对齐（C==anchor 或 C 名==headword）；anchor 在场时叠加
+          anchor ∈ 候选集；anchor 无效时仅 headword 对齐（v4.1 epithet 限定式保护）；
+        - bare：证据门槛（observation → ≥2 独立 chunk 证据 → confirmed）；
+          RC3 GENERIC / category=None/PERSON 不触发（保持现状）。
+        """
+        if (mention, target) in self._role_confirmed:
+            return "alias"
+        kind, has_de, anchor, headword = self.classify_role_mention(mention)
+        if kind == "qualified":
+            if has_de:
+                # X的Y：target 必须 == 核词人物；anchor 有效时需文本在场（M9 vs M18）
+                if target != headword:
+                    return "drop"                    # target-mismatch（M5/M17）
+                if anchor is not None:
+                    return "alias" if self._anchor_in_text(anchor) else "drop"
+                return "alias"                       # anchor 无效 → headword 对齐（M19）
+            # 复合称谓：target == anchor 自身 → 单次 alias（mention 即 anchor 变体，无需文本在场）
+            if target == anchor:
+                return "alias"                       # 二老爷→傩送 / 天保大老→天保
+            if target == headword:
+                if anchor is not None:
+                    return "alias" if self._anchor_in_text(anchor) else "drop"
+                return "alias"                       # 翠翠祖父→祖父（anchor 文本在场时）
+            return "drop"
+        # ---- bare：证据机制（触发：非 GENERIC + category=DESCRIPTIVE + 长辈称谓首字）----
+        from app.pipeline.hygiene import classify_mention as hy_classify
+        if hy_classify(mention) == MentionCategory.GENERIC:
+            return "alias"                  # RC3 路径不变（M10）
+        if self._category_of(mention) != MentionCategory.DESCRIPTIVE:
+            return "alias"                  # category=None/PERSON → 现状（M14/M15）
+        if not mention or mention[0] not in _SENIOR_ROLE_INITIALS:
+            return "alias"                  # 晚辈/平辈称谓（大儿子/长子/次子）走 P17 路径
+        if mention in self._role_blocked:
+            return "drop"                   # 跨 canonical 冲突已阻断（M12/M13）
+        obs = self._role_observations.get(mention)
+        if obs is None:
+            self._role_observations[mention] = {target: {self._current_chunk_id}}
+            return "drop"                   # 首次 observation（M1/M11）
+        if target not in obs:
+            # 跨 canonical 冲突：已有其它 canonical 的证据 → blocked，全部作废
+            self._role_blocked.add(mention)
+            self._role_observations.pop(mention, None)
+            return "drop"
+        evidence = obs[target]
+        evidence.add(self._current_chunk_id)
+        if len(evidence) >= 2:
+            self._role_confirmed.add((mention, target))
+            self._role_observations.pop(mention, None)
+            return "alias"                  # ≥2 独立证据 → confirmed（M2/M4/M8）
+        return "drop"
 
     def finalize(self) -> set[str]:
         """V0.2.5-a：flush 未获正文确认的 provisional canonical（不入图）。
