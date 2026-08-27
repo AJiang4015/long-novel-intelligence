@@ -91,8 +91,17 @@ Lineage（lineage.py）
 
 ## 5. Allowed dependencies
 
-- pipeline → `schemas`（契约类型：`MentionCategory` / `ExtractionResult` / `PendingMention` / `AliasJudgeResult` 等）
-- pipeline 内部：epub_reader ← sections（注意：sections 不得依赖 epub_reader，防循环导入）；resolver → chunker / lineage / sections / hygiene；merger → chunker
+> 记号：`A → B` 表示 A 依赖（import）B。以下为代码事实（2026-08-27 快照）。
+
+- pipeline → `schemas`（契约类型：`MentionCategory` / `ExtractionResult` / `PendingMention` / `AliasJudgeResult` 等）：`llm_client` / `hygiene` / `extractor` / `resolver` / `merger` 均依赖 schemas
+- pipeline 内部：
+  - `sections`：**无任何 app 内依赖**（循环导入锚点，必须保持独立；否则 epub_reader → sections → epub_reader 成环）
+  - `epub_reader` → sections（`classify_chapter`）
+  - `chunker` → epub_reader + sections
+  - `extractor` → chunker + llm_client + schemas
+  - `resolver` → chunker + lineage + sections + hygiene（运行时局部 import）+ schemas
+  - `merger` → chunker + schemas
+  - `lineage` → config（无 pipeline 内部依赖；不 import resolver / merger，见 §6）
 - 依赖注入：judge（`llm_client.judge_aliases` / `judge_merges`）由 api 层注入，resolver 本身不创建 LLM 客户端
 
 ## 6. Forbidden dependencies

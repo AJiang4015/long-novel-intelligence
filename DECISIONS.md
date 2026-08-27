@@ -108,11 +108,11 @@
 ## D-10 — 不引入 classifier 绕过 P017 D5
 
 - **Status**: Accepted
-- **Date**: 2026-08-27（记录；形成于 V0.2.5-b 之后，Task B 评审）
-- **Context**: category=None → legacy PERSON fallback 使长辈称谓（爸爸/母亲）绕过 B1 与 role gate（D5 缺口，D5-a extraction 覆盖缺失 / D5-b LLM generic 标签未生效）。
+- **Date**: 2026-08-27（记录；约束形成于 V0.2.5-b，2026-08-26；Task B 评审延续，2026-08-27）
+- **Context**: D5 是一组「extraction classification 覆盖缺口」的 Known Limitation，含三个层面：**D5 原义**——category=None → legacy PERSON fallback，使长辈称谓（爸爸/母亲）绕过 B1 与 role gate（P017/P018 实证）；**D5-a**——extraction mention coverage 缺失（爸爸/妈妈/大儿子/翠翠的祖父 等未提取，根本不进入 pipeline）；**D5-b**——LLM generic 标签在 judge-null 路径未生效（母亲 generic + judge null → 仍注册 canonical）。三者均不改变「不引入 classifier」的约束。
 - **Decision**: **不擅自补分类器绕过 D5**；D5 是已记录 Known Limitation，走 P06 follow-up / Task B 独立设计（`docs/superpowers/specs/2026-08-27-p017-d5-category-coverage-design.md`），只评审不实现。
-- **Reason**: 补分类器扩大范围、改变 LLM 契约、与「先归因后修改」纪律冲突。
-- **Consequence**: 爸爸 碎片化为独立 Person 属预期 Known Limitation；新方案必须先有 Problem Record + Spec + Review（PROCESS.md §5）。
+- **Reason**: 补分类器扩大范围、改变 LLM 契约（MentionCategory 语义）、与「先归因后修改」纪律冲突（D-11）。
+- **Consequence**: 爸爸 碎片化为独立 Person、母亲 等未收敛均属预期 Known Limitation；新方案必须先有 Problem Record + Spec + Review（PROCESS.md §5）。
 
 ## D-11 — Task A 先于 Task B
 
@@ -172,6 +172,15 @@
 - **Reason**: 确定性优先（不引入 LLM 分类依赖）；默认 BODY 避免误伤正文。
 - **Consequence**: 非正文 canonical 门控（provisional/promotion/flush）依赖该分类；换语料时复核词表。
 
+## D-17 — P017 B1：chunk 内 deferred 重召回
+
+- **Status**: Accepted
+- **Date**: 2026-08-27（记录；形成于 V0.2.5-b，2026-08-26）
+- **Context**: DESCRIPTIVE/COMPOSITE 无候选时在 chunk 处理中途立即注册 canonical，先处理者绕过 judge 锁成 canonical（P017 一族碎片；P08/P10 顺序竞态在注册层的复发）。
+- **Decision**: B1 chunk 内 deferred——DESCRIPTIVE/COMPOSITE 无候选 → 不进 known/_index，收集到 chunk 级 deferred；chunk 末本 chunk 新 canonical 入 _index 后对 deferred 重跑 recall；重召回候选与处理期 pending 合并为**同一次 batch judge**（零额外 LLM 请求）。仍无法确认的走 D-9（unresolved 不注册）。
+- **Reason**: 消除「先处理者绕过 judge」的顺序竞态；batch judge 使 LLM 成本不变（每 chunk 至多一次 judge，judge 契约零变化）。
+- **Consequence**: 跨 chunk deferred（B2）未实现，留待后续独立立项；D5（category=None → PERSON fallback，D-10）使部分称谓绕过 B1，为 Known Limitation（真实评估实证：ch5b 一族 category 非 DESCRIPTIVE 直接注册）。
+
 ---
 
 ## 决策索引
@@ -194,3 +203,4 @@
 | D-14 | 进程内 JobStore | Accepted |
 | D-15 | hygiene 只做 hard filter | Accepted |
 | D-16 | section 分类为项目级启发式 | Accepted |
+| D-17 | P017 B1：chunk 内 deferred 重召回 | Accepted |

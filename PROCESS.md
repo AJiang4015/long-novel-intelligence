@@ -57,9 +57,10 @@ extraction coverage failure   → extractor 层    （P017 D5-a）
 
 ## 2. 真实 LLM 实验规范
 
-- **变量固定原则**：一次实验只允许一个变量变化；其余（模型 / chunk size / overlap / concurrency / novel_id / 代码 commit / Neo4j 版本）必须与 Environment Baseline 全等。
-- **fresh novel / fresh job 要求**：每次真实评估使用**全新 novel_id**（新上传），绝不复用旧 Novel 增量测试；评估结果默认不删除。
-- **A/B 实验唯一变量保证**：A/B 之间除被测变量外 Environment Baseline 完全一致；被测变量在报告中显式声明。
+- **变量固定原则**：一次实验只允许一个变量变化。除被测变量外，以下必须全部固定：输入语料内容（同一本小说 / 同一份 EPUB）、模型、chunk size、overlap、concurrency、代码 commit、Neo4j 版本、相关环境变量（`.env` 差异需在报告中声明）。
+- **fresh novel / fresh job 要求**：每次真实评估使用**全新 novel_id**（新上传），绝不复用旧 Novel 增量测试；评估结果默认不删除。**注意**：novel_id 是技术标识而非实验变量——fresh-novel 纪律下 A/B 两组必然持有不同 novel_id（同一份 EPUB 重新上传），因此 novel_id 不进「变量固定」清单，只要求**输入语料内容一致**。
+- **A/B 实验唯一变量**：A/B 两组对比时，除被测变量（有且仅有一个）外，其余按「变量固定原则」全部相同——同一输入语料内容、相同模型 / 切块 / 并发 / 代码版本 / Neo4j 版本 / 环境。被测变量及其取值在报告中显式声明（哪个是 A、哪个是 B、差异是什么）。
+- **LLM 非确定性**：judge / 抽取存在非确定性（P06），单组单次运行不能代表结论；A/B 结论需每组多次运行取趋势，并在报告中注明运行次数与波动（见 `TESTING.md` §9.1）。
 - **验收顺序（不得跳级）**：unit（全 mock）→ integration（真实 Neo4j + mock LLM）→ real ingest（真实 LLM）。
 - **lineage 使用**：归因类实验开启 `ER_LINEAGE=1`（默认关零开销）；事件经 `lineage_id` join，job 终态 flush 后离线归层；观测是旁路，**不得**因观测改变判定。
 - 评估参数 / 报告模板 / 验收指标见 `TESTING.md` §6/§9。
