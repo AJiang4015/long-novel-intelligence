@@ -42,6 +42,7 @@ P16-a（题记污染）修复后，`父亲` 不再由题记注册 canonical；�
 - T5（2026-08-26 设计评审）：候选 A（二次证据门槛）+ B（裸/限定结构区分）细化为 V0.2.6 spec；关键决策——父亲 因跨人物证据**正确地不建立 alias**（防 sink）；爸爸/爹爹 专属 → confirmed。
 - T6（2026-08-26 v2 修订）：评审发现 v1 阻断性矛盾——`finalize 兜底确认`会绕过 ≥2 gate 且使 M5 错吸被确认；修订为**无自动晋升**（observation 永不确认）+ **跨 canonical 冲突 → blocked** + 触发条件收窄（老船夫 等 descriptive epithet 不进机制）。
 - T7（2026-08-26 v3 修订）：评审发现 v2 残留漏洞——qualified 跨 chunk 重复误判仍可凑齐 ≥2 evidence（M16）；补齐 **anchor-mismatch 语义**：qualified + 锚点 ∉ 候选集 → 判定不可确认（不入 observation），M16 关闭。
+- T8（2026-08-26 v4 修订）：评审发现 v3 残留漏洞——`anchor ∈ candidates` 不能证明 resolves_to C 正确（anchor 是关系主体非目标，M17 反例：翠翠的父亲 候选 [翠翠,顺顺] judge→顺顺）；新增 **target 对齐判据**（C == anchor 的 canonical 或 C 名 == 核词），qualified 单次 alias 需「对齐 + anchor 在场」双条件，M17 关闭。
 
 ## 6. Initial Hypothesis
 
@@ -90,16 +91,15 @@ Step 5  区分：吸收语义正确性（本次全对）vs 机制脆弱性（jud
 
 - 无（尚未立项尝试修复；当前靠 judge null + unresolved 被动兜底）。
 
-## 13. Correct Approach（V0.2.6 候选 A+B 修订版 v3，评审中）
+## 13. Correct Approach（V0.2.6 候选 A+B 修订版 v4，评审中）
 
-- **role 形态判定**（确定性结构规则，非词表）：`qualified` = X的Y / 复合称谓（含 known 名子串）→ 锚点；`bare` = 其余。
-- **触发条件收窄**：证据机制仅作用于 bare + 非 GENERIC + **LLM category=DESCRIPTIVE**；`老船夫` 等 descriptive epithet（category=PERSON）**不进机制**。
-- **bare 证据准入**：judge 判 resolves_to → observation（按 chunk_id 去重）；≥2 独立证据 → confirmed → alias；<2 → 输出剔除；**observation 永不自动晋升**（无 finalize 绕过）。
-- **跨 canonical 冲突 = blocked**：同一 bare mention →C1 与 →C2 → blocked，全部 observation 作废，永不确定。
-- **qualified anchor-mismatch（v3 新增）**：qualified + anchor 有效但 ∉ 候选集 → judge 判定**不可确认**（不记 observation、不累计 evidence、不入图）——M16 跨 chunk 重复误判不再能凑齐证据。
-- **qualified + anchor ∈ 候选集**：安全路径，单次 alias 保持（翠翠的祖父 → 祖父，T-b8）。
-- **合法 alias 保证**：爸爸（ch5/6/14/22）/ 爹爹（ch13/20）≥2 证据 → confirmed；**父亲 跨人物 → 永不确认、不入图**（P16-b 目标）。
-- 详见 spec v3 `docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md`。
+- **role 形态判定与核词提取**（确定性结构规则，非词表）：`qualified` = X的Y（anchor=X/核词=Y）或复合称谓（anchor=最长 known 名子串/核词=剩余）；`bare` = 其余。
+- **target 对齐判据（v4 核心）**：qualified 的 judge 判定 C 必须满足 `C == anchor 的 canonical` 或 `C 名 == 核词`，否则 target-mismatch → 不可确认（M17：anchor 在场但 judge 选错 candidate 被拦截）。
+- **anchor 在场为第二重条件**：对齐通过但 anchor ∉ 候选集 → 仍不可确认（anchor-mismatch）。
+- **bare 证据准入（不变）**：judge 判 resolves_to → observation（chunk_id 去重）；≥2 独立证据 → confirmed → alias；<2 → 输出剔除；observation 永不自动晋升；跨 canonical 冲突 → blocked。
+- **触发范围收窄**：bare 证据机制仅作用于 category=DESCRIPTIVE 且非 GENERIC；老船夫 等 descriptive epithet（PERSON）不进机制；COMPOSITE（天保大老/岳云二老）走 qualified 对齐路径。
+- **合法 alias 保证**：爸爸/爹爹（≥2 证据）→ confirmed；翠翠的祖父（核词对齐+anchor 在场）→ 单次 alias；天保大老/岳云二老（anchor 对齐）→ 单次 alias；**父亲 跨人物 → 永不确认、不入图**（P16-b 目标）。
+- 详见 spec v4 `docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md`。
 
 ## 14. Invariants
 
@@ -110,7 +110,7 @@ Step 5  区分：吸收语义正确性（本次全对）vs 机制脆弱性（jud
 ## 15. Validation
 
 - mock 实证（已完成）：M1 单候选吸收成立；M5 错吸可复现（无防御）；M3/M4 多候选/null 时 judge 可正确。
-- 待实现后跑 M1-M16（deterministic）→ 全量回归（T-a/T-b/hygiene/resolver/integration 15）。关键用例：M5（qualified 错吸不可确认）、M11（1 证据无冲突也不 finalize 确认）、M12/M13（跨 canonical 冲突 blocked）、**M16（qualified anchor 连续缺席 + 跨 chunk 重复误判 → 不确认）**、M14（老船夫 不进机制）、M9（翠翠的祖父 单次 alias 保持）。
+- 待实现后跑 M1-M17（deterministic）→ 全量回归（T-a/T-b/hygiene/resolver/integration 15）。关键用例：M5（qualified 错吸不可确认）、M11（1 证据无冲突也不 finalize 确认）、M12/M13（跨 canonical 冲突 blocked）、M16（anchor 连续缺席 + 跨 chunk 重复误判 → 不确认）、**M17（anchor 在场但 judge 选错 candidate → target-mismatch 不确认）**、M9（翠翠的祖父 核词对齐单次 alias）、M14（老船夫 不进机制）。
 - 真实评估验收指标：role alias 吸收正误率（爸爸/爹爹→顺顺 建立；父亲 不建立）；翠翠的父亲 类跨人物称谓持续被拦截；顺顺 类 sink canonical 不再扩大错吸。
 
 ## 16. Trade-offs
