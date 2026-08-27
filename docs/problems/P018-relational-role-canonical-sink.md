@@ -1,16 +1,16 @@
 # P018 — 正文 relational-role canonical sink：角色称谓被正文 canonical 吸收（P16-b）
 
-- **Status**: 🔍 investigating（设计评审中：候选 A+B 已细化，未实现）
-- **Severity**: Medium（本次无跨人物错吸实证；机制脆弱，judge 误判时存在错吸风险）
+- **Status**: ✅ **verified**（V0.2.6 实现 + 真实评估：**mechanism PASS / capability PARTIAL**；P16-b 冻结，不再修改）
+- **Severity**: Medium（V0.2.6 后核心 sink 已受控：父亲 被拦截、爹爹 正确 confirmed；残留 P017 D5 缺口为 Known Limitation）
 - **Domain**: ER 算法 / judge 语义 / canonical 命名
 - **Tags**: er, relational-role, sink, alias-absorption, judge, ambiguity, p16-b, role-admission
 - **First Seen**: V0.2.5 真实评估（job `1b7b7c1b`，novel `0ef3bd31`）
-- **Last Verified**: 2026-08-26（EPUB 原文逐条核对 aliases 可解释性 + mock 实验 M1-M5）
-- **Evidence Level**: HIGH（父亲→顺顺 吸收存在且 8 个 aliases 全部可由顺顺解释；M5 错吸可复现）；MEDIUM（错吸发生率为推断，依赖 judge 判别力）
-- **Decision Type**: EXPERIMENT_RESULT（真实评估观察 + mock 复现）+ DESIGN_DECISION（V0.2.6 候选 A+B：role alias 证据准入）
-- **Related Problems**: P16（P16-a 分离后残留的正文内机制）；P06（judge 判定方差）；P08（canonical 命名与分裂）；P17（共用注册缝，策略独立）
-- **Related Commits**: 无（未实现）；前置 P16-a 修复 `c357e5f`
-- **Related Evaluation Reports**: `docs/evaluation/2026-08-26-biancheng-v025-eval.md`；设计 spec `docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md`
+- **Last Verified**: 2026-08-27（V0.2.6 真实评估 job `d002fdec`，novel `3a54e06a`）
+- **Evidence Level**: HIGH（父亲→顺顺 吸收 V0.2.5 实证 + V0.2.6 拦截实证 + 爹爹 confirmed 实证）；MEDIUM（爸爸 未确认归因 D5，category 未落盘为推断）
+- **Decision Type**: EXPERIMENT_RESULT（V0.2.5/V0.2.6 两次真实评估）+ DESIGN_DECISION（V0.2.6 候选 A+B：role alias 证据准入）+ KNOWN_LIMITATION（P017 D5：category=None/PERSON 绕过 gate）
+- **Related Problems**: P16（P16-a 分离后残留的正文内机制）；P06（judge 判定方差 + 链路可观测性缺口，Task A）；P08（canonical 命名与分裂）；P17（D5 category 缺口，Task B）
+- **Related Commits**: V0.2.6 实现 `f5b4c09`；前置 P16-a 修复 `c357e5f`
+- **Related Evaluation Reports**: `docs/evaluation/2026-08-27-biancheng-v026-eval.md`；`docs/evaluation/2026-08-26-biancheng-v025-eval.md`；设计 spec `docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md`
 
 ## 1. Context
 
@@ -44,6 +44,7 @@ P16-a（题记污染）修复后，`父亲` 不再由题记注册 canonical；�
 - T7（2026-08-26 v3 修订）：评审发现 v2 残留漏洞——qualified 跨 chunk 重复误判仍可凑齐 ≥2 evidence（M16）；补齐 **anchor-mismatch 语义**：qualified + 锚点 ∉ 候选集 → 判定不可确认（不入 observation），M16 关闭。
 - T8（2026-08-26 v4 修订）：评审发现 v3 残留漏洞——`anchor ∈ candidates` 不能证明 resolves_to C 正确（anchor 是关系主体非目标，M17 反例：翠翠的父亲 候选 [翠翠,顺顺] judge→顺顺）；新增 **target 对齐判据**（C == anchor 的 canonical 或 C 名 == 核词），qualified 单次 alias 需「对齐 + anchor 在场」双条件，M17 关闭。
 - T9（2026-08-26 实现，TDD）：M1-M20 先红后绿；实现期三处修订——① 复合称谓**前缀**切分（岳云二老 若 岳云 非 known 回 bare）；② bare 触发收窄为**长辈称谓首字**（{父,爸,爹,母,妈,娘,婆,奶}，避免与 P17 冲突——晚辈称谓 大儿子/长子/次子 走 P17 路径）；③ anchor 文本在场含别名（_anchor_in_text，天保大老 的 anchor 别名「天保」在场视为在场）。全量：unit 207 / integration 15 全绿，P16-a/P17/RC2/RC3 零破坏。
+- T10（2026-08-27 真实评估，job `d002fdec` / novel `3a54e06a`）：**正式验收**——爹爹→顺顺 confirmed（≥2 独立证据，机制正向实证）；父亲→不入图、不进任何 alias、非 Person（跨人物裸 role 拦截，核心目标达成）；翠翠的父亲→不进入任何 canonical（qualified target-mismatch/anchor 拦截实证）；顺顺 aliases 8→3（父亲 退出 sink）；**爸爸→未确认、形成独立 Person**（P017 D5：category=None/PERSON 绕过 evidence gate，Known Limitation，不修）；**翠翠的祖父→未建立**（judge null 或 extraction 未提取，链路未落盘无法区分 → P06/observability 缺口，Task A）。merge 148 pairs 全 failed → INCONCLUSIVE。**冻结 P16-b，不再修改。**
 
 ## 6. Initial Hypothesis
 
@@ -112,7 +113,15 @@ Step 5  区分：吸收语义正确性（本次全对）vs 机制脆弱性（jud
 
 - mock 实证（已完成）：M1 单候选吸收成立；M5 错吸可复现（无防御）；M3/M4 多候选/null 时 judge 可正确。
 - ✅ **M1-M20（deterministic）全绿** → 全量回归（unit 207 / integration 15，P16-a/P17/RC2/RC3 零破坏）。关键用例：M5/M17（qualified 错吸 target-mismatch）、M11（无 finalize 绕过）、M12/M13（跨 canonical blocked）、M16（anchor 连续缺席不确认）、M18（对齐但 anchor 缺席不确认）、M19（anchor 无效 epithet 保护）、M20（复合 anchor 别名在场）。
-- 真实评估验收指标（待下次）：role alias 吸收正误率（爸爸/爹爹→顺顺 建立；父亲 不建立）；翠翠的父亲 类跨人物称谓持续被拦截；顺顺 类 sink canonical 不再扩大错吸；LLM category 覆盖（长辈称谓裸词是否被标 DESCRIPTIVE——P06 follow-up）。
+- ✅ **真实评估（V0.2.6，2026-08-27，job `d002fdec`）**：
+  - 爹爹→顺顺 **confirmed**（≥2 独立 chunk 证据 → gate 放行；机制正向实证）。
+  - 父亲 **不入图 / 不进任何 alias / 非 Person**（跨人物裸 role 拦截；推断 category=DESCRIPTIVE 触发 gate → blocked 或 unresolved）。
+  - 翠翠的父亲 **不进入任何 canonical**（qualified 拦截；顺顺 chapters 无 16）。
+  - 顺顺 aliases **8 → 3**（父亲/爸爸/船总/顺顺大哥/顺顺船总 退出；爹爹 保留；全部可解释）。
+  - **爸爸 未确认**（独立 Person mc=1）：P017 D5 Known Limitation 实证（category=None/PERSON 绕过 gate），非机制失败。
+  - **翠翠的祖父 未建立**：judge null / extraction 未提取，链路未落盘无法区分 → 归 P06/observability 缺口（Task A），不判机制失败。
+  - 老船夫→祖父 保持（descriptive epithet 未误套 gate）；天保大老→天保 保持；哥哥→天保（canonical 命名漂移，语义正确）。
+- 验收定义（正式）：**P16-b mechanism = PASS / capability = PARTIAL**；Follow-up code change for P16-b = **NONE**。
 
 ## 16. Trade-offs
 
@@ -129,18 +138,21 @@ Step 5  区分：吸收语义正确性（本次全对）vs 机制脆弱性（jud
 
 ## 18. Follow-up
 
-- 设计评审通过（v3）→ 实现（resolver 新增 `_role_observations/_role_confirmed/_role_blocked` + `classify_role_mention` + anchor 在场判定 + evidence 分派；**无 novels.py 变更**）。
-- 实现前先落 M1-M16 fixture（当前行为基线全红 → 实现 → 全绿）。
-- 下次真实评估继续观察：顺顺 类 sink 吸收正误率、父亲 不建立 alias、翠翠的父亲 类持续拦截、LLM category 覆盖（父亲 是否被标 PERSON 而未触发——P06 follow-up）。
+- ✅ V0.2.6 已实现并验收（T9/T10）；**P16-b 冻结，无 follow-up code change**。
+- **Task A（P06 可观测性，独立立项）**：为 extract/judge/admission/merge 增加 lineage / debug observability——让下一次运行能回答「mention 是否被提取 / category 是什么 / 是否进入 recall / judge 是否调用 / judge 输入输出 / admission 结果 / 是否 merge 丢失」。目标：`翠翠的祖父` 类失败可明确归层（extraction vs recall vs judge vs admission vs merge）。**只加观测，不改判定逻辑**。设计 spec：`docs/superpowers/specs/2026-08-27-p06-lineage-observability-design.md`。
+- **Task B（P017 D5，独立立项）**：研究 extraction classification coverage——category=None/PERSON 的长辈称谓（爸爸/母亲）绕过 role admission 的解决方案（问题定位 + 方案设计，不直接修改 P16-b）。设计 spec：`docs/superpowers/specs/2026-08-27-p017-d5-category-coverage-design.md`。
 - Group / 关系角色建模：留待未来（P16-b 不引入）。
 
 ## 19. Current Limitation
 
-- 无显式 relational-role 策略；依赖 judge null + unresolved 兜底，机制脆弱。
-- 「父亲」正文歧义（≥3 人）未建模；同 chunk 共现时 judge 误判即错吸。
+- **P017 D5（Known Limitation）**：category=None/PERSON 的裸长辈称谓（爸爸/母亲）绕过 evidence gate → 未确认（爸爸 碎片化为独立 Person）。与 P17 D5 同哲学，不引入 classifier，走 Task B（P06/P017 category 覆盖）。
+- **P06 / 链路可观测性缺口**：extraction 输出 / pending / judge 输入输出未落盘 → 翠翠的祖父 类失败无法直接归层（Task A）。
+- merge batch judge 稳定性（RC1）：两次评估均 148/155 pairs 全 failed → INCONCLUSIVE（独立问题）。
 
 ## 20. Do Not Reopen
 
 - 再次出现 父亲→顺顺 类吸收：先查是否为语义正确吸收（aliases 可解释性核对）→ 再查跨人物错吸（翠翠的父亲 类）→ 属于 P018，**不要**回退 P16-a/-b。
 - 不要用「把 父亲/爸爸/爹爹 加入 generic 词表」修复（破坏正向归并）。
 - 不要把 P018 与 P16/P17 合并为单一策略。
+- **不要为「爸爸 未 confirmed」给 P16-b 加特殊规则**（D5 缺口走 Task B，P16-b 冻结）。
+- **不要因「翠翠的祖父 未建立」修改 P16-b gate**（未确认是 judge/extraction 层，非 gate 行为；先上 Task A 观测）。

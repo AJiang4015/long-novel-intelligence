@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from app.pipeline.chunker import Chunk
+from app.pipeline.lineage import LineageRecorder, new_lineage_id
 from app.pipeline.sections import SectionType
 from app.schemas.llm import (AliasCandidate, AliasJudgeResult, ExtractionResult,
                              MentionCategory, PendingMention)
@@ -28,8 +29,14 @@ def _overlap(a: str, b: str) -> int:
 class EntityResolver:
     """一次 Novel ingest 一个实例；known / canonical_aliases / mention index 整本持续。"""
 
-    def __init__(self, judge: Callable[[str, list[PendingMention]], AliasJudgeResult]):
+    def __init__(self, judge: Callable[[str, list[PendingMention]], AliasJudgeResult],
+                 lineage: LineageRecorder | None = None):
         self._judge = judge
+        # V0.2.7 Task A：lineage 观测 recorder（默认 no-op；ER_LINEAGE=1 时由 novels.py 注入）。
+        # 纯旁路：不进入任何判定分支，enabled=False 时全部方法空返回。
+        self._lineage: LineageRecorder = lineage if lineage is not None else LineageRecorder(enabled=False)
+        # 本 chunk 内 mention -> {"lineage_id": str, "roles": set[str], "entered": bool}
+        self._lineage_ctx: dict[str, dict] = {}
         self.known: dict[str, str] = {}               # 名字 → canonical（含 canonical 自身与别名）
         self.canonical_aliases: dict[str, list[str]] = {}  # canonical → [别名]，保序
         self._index: dict[str, set[str]] = {}         # canonical → matched_names（去重）
@@ -77,6 +84,15 @@ class EntityResolver:
         # V0.2.4：本 chunk 提取的 category 映射（LLM 提供时；缺省 None）
         self._current_categories: dict[str, MentionCategory] = {
             c.name: c.category for c in result.characters if c.category is not None}
+        # ---- V0.2.7 lineage：chunk_start + 本 chunk lineage 上下文重置（旁路观测）----
+        if self._lineage.enabled:
+            self._lineage_ctx = {}
+            self._lineage.chunk_start(
+                chunk_id=chunk.chunk_id, chapter_id=chunk.chapter_id,
+                section_type=chunk.section_type.value, text_len=len(chunk.text),
+                characters_count=len(result.characters),
+                relationships_count=len(result.relationships),
+            )
         pending: list[PendingMention] = []
         resolved_chars: list = []
         resolved_rels: list = []
@@ -116,11 +132,16 @@ class EntityResolver:
         # V0.2.4-a RC2：硬过滤 mention 在 characters 主处理入口剔除并计数一次；
         # 不进 resolved.characters；同一 mention 在 relationship endpoint 命中不再重复计数。
         for c in result.characters:
+            # ---- V0.2.7 lineage：① extraction 层 mention_enter（旁路观测）----
+            self._record_mention_enter(c.name, "character", result)
             if is_hard_filtered(c.name):
                 if classify_mention(c.name) == MentionCategory.COLLECTIVE:
                     self.hygiene_stats["collective_filtered"] += 1
                 else:
                     self.hygiene_stats["invalid_filtered"] += 1
+                # ---- lineage：hard filter 剔除 ----
+                self._lineage_admission(c.name, "skipped_hardfilter", reason="collective_or_invalid")
+                self._lineage_registration(c.name, registered=False, alias_to=None, final_canonical=None)
                 continue
             # V0.2.4-b RC3：relational generic 词表命中 → 强制 GENERIC。
             # GENERIC 无候选丢弃（不进 resolved.characters）；有候选走 judge。
@@ -137,8 +158,17 @@ class EntityResolver:
             if resolved_name is not None:
                 resolved_chars.append({"name": resolved_name})
         for r in result.relationships:
+            # ---- V0.2.7 lineage：① extraction 层 mention_enter（关系端点；旁路观测）----
+            self._record_mention_enter(r.source, "relationship_source", result)
+            self._record_mention_enter(r.target, "relationship_target", result)
             # V0.2.4-a RC2：任一 endpoint 为硬过滤 mention → 丢弃整条关系（不计数）
             if is_hard_filtered(r.source) or is_hard_filtered(r.target):
+                if is_hard_filtered(r.source):
+                    self._lineage_admission(r.source, "skipped_hardfilter", reason="collective_or_invalid")
+                    self._lineage_registration(r.source, registered=False, alias_to=None, final_canonical=None)
+                if is_hard_filtered(r.target):
+                    self._lineage_admission(r.target, "skipped_hardfilter", reason="collective_or_invalid")
+                    self._lineage_registration(r.target, registered=False, alias_to=None, final_canonical=None)
                 continue
             # V0.2.4-b RC3：relational generic endpoint → 走 GENERIC 语义；
             # 无候选丢弃整条关系（不计数）；有候选走 judge。
@@ -180,10 +210,15 @@ class EntityResolver:
             text_confirmed_recall = {c for c in text_confirmed_recall if not is_hard_filtered(c)}
             for m in list(dict.fromkeys(self._deferred)):   # 去重：同名多次出现只重召回一次
                 cands = self._recall(m, confirmed, text_confirmed_recall)
+                # ---- V0.2.7 lineage：chunk 末 deferred 重召回（② recall 层）----
+                self._lineage_recall(m, cands, confirmed, text_confirmed_recall)
                 if cands:
                     pending.append(PendingMention(mention=m, candidates=cands))
                 else:
                     self._register_or_unresolved(m)   # BODY DESCRIPTIVE/COMPOSITE → unresolved
+                    # ---- lineage：重召回仍无候选 → unresolved ----
+                    self._lineage_admission(m, "deferred_unresolved", reason="deferred_recall_none")
+                    self._lineage_registration(m, registered=False, alias_to=None, final_canonical=None)
 
         # ---- V0.2.3-b1：桥接 mention 旁路收集（纯观察，不改任何状态）----
         established = {c for c in self.known if self.known[c] == c}
@@ -203,10 +238,16 @@ class EntityResolver:
 
         failed = False
         if pending:
+            # ---- V0.2.7 lineage：judge_batch（③ judge 层辅助事件；旁路观测）----
+            if self._lineage.enabled:
+                self._lineage.judge_batch(
+                    chunk_id=self._current_chunk_id, chapter_id=self._current_chapter_id,
+                    mentions=[p.mention for p in pending],
+                )
             try:
                 judge_result = self._judge(chunk.text, pending)
                 self._apply_judge(judge_result, pending)
-            except Exception:
+            except Exception as exc:
                 # validation/网络等任何失败：待判定 mention 按 category 分派（V0.2.5-b D4）——
                 # PERSON/None → 既有 fail-safe 注册；GENERIC → 丢弃（与 RC3「GENERIC 永不
                 # canonical」对齐，修复既有 exception 路径洞）；DESCRIPTIVE/COMPOSITE →
@@ -214,7 +255,22 @@ class EntityResolver:
                 for p in pending:
                     if classify_mention(p.mention) == MentionCategory.GENERIC:
                         continue
+                    # ---- lineage：judge 异常（③ judge + ④⑤ 分派）----
+                    self._lineage_judge(
+                        p.mention, batch_size=len(pending),
+                        input_candidates=[c.canonical for c in p.candidates],
+                        resolves_to=None, missing=False, error=f"{type(exc).__name__}",
+                    )
                     self._register_or_unresolved(p.mention)
+                    label, registered, final, prov = self._register_outcome(p.mention)
+                    if label.startswith("null_"):
+                        label = label.replace("null_", "exception_", 1)
+                    self._lineage_admission(p.mention, label, reason="judge_exception")
+                    self._lineage_registration(
+                        p.mention, registered=registered,
+                        alias_to=(final if registered and final != p.mention else None),
+                        final_canonical=final, provisional=prov,
+                    )
                 failed = True
 
         # 被丢弃 / unresolved mention 从输出剔除（unconditional：deferred 全部 unresolved 时
@@ -259,6 +315,164 @@ class EntityResolver:
         return resolved, failed
 
     # ---- 内部 ----
+    # ---- V0.2.7 Task A：lineage 旁路 helpers（纯观测；不进入任何判定分支）----
+
+    def _lineage_id(self, name: str) -> str | None:
+        """当前 chunk 内 name 的稳定 lineage_id（首见生成；禁用时返回 None）。
+
+        不同 pipeline 层（extraction/recall/judge/admission/registration）的事件都携带该 id，
+        读取方可显式 join——不依赖 (chunk_id, mention) 隐式关联。
+        """
+        if not self._lineage.enabled:
+            return None
+        ctx = self._lineage_ctx.get(name)
+        if ctx is None:
+            ctx = {"lineage_id": new_lineage_id(), "roles": set(), "entered": False}
+            self._lineage_ctx[name] = ctx
+        return ctx["lineage_id"]
+
+    def _record_mention_enter(self, name: str, role: str, result: ExtractionResult) -> None:
+        """① extraction 层：mention 进入 resolver 时记录 extraction 事实（每 lineage 一次）。"""
+        if not self._lineage.enabled:
+            return
+        lid = self._lineage_id(name)
+        if lid is None:
+            return
+        ctx = self._lineage_ctx[name]
+        ctx["roles"].add(role)
+        if ctx["entered"]:
+            return
+        ctx["entered"] = True
+        from app.pipeline.hygiene import classify_mention
+        cat = next((c.category for c in result.characters if c.name == name), None)
+        hy = classify_mention(name)
+        self._lineage.mention_enter(
+            lineage_id=lid, chunk_id=self._current_chunk_id,
+            chapter_id=self._current_chapter_id, section_type=self._current_section_type.value,
+            mention=name, extracted=True,
+            extraction_category=cat.value if cat is not None else None,
+            hygiene_category=hy.value if hy is not None else None,
+            extraction_roles=sorted(ctx["roles"]),
+        )
+
+    def _recall_source_of(self, candidates: list[str], confirmed: set[str],
+                          text_confirmed: set[str]) -> str:
+        if not candidates:
+            return "none"
+        if any(c in confirmed for c in candidates):
+            return "strong_extraction"
+        if any(c in text_confirmed for c in candidates):
+            return "strong_text"
+        return "weak"
+
+    def _lineage_recall(self, name: str, candidates: list[AliasCandidate] | None,
+                        confirmed: set[str] | None = None,
+                        text_confirmed: set[str] | None = None,
+                        source: str | None = None) -> None:
+        """② recall / role 判定层事件（candidates 为 None 表示 known-hit 等无候选召回场景）。"""
+        if not self._lineage.enabled:
+            return
+        lid = self._lineage_id(name)
+        if lid is None:
+            return
+        kind, has_de, anchor, headword = self.classify_role_mention(name)
+        cands = [c.canonical for c in candidates] if candidates else []
+        src = source or self._recall_source_of(cands, confirmed or set(), text_confirmed or set())
+        self._lineage.recall(
+            lineage_id=lid, chunk_id=self._current_chunk_id,
+            chapter_id=self._current_chapter_id, section_type=self._current_section_type.value,
+            mention=name, role_kind=kind, role_has_de=has_de, role_anchor=anchor,
+            role_anchor_known=(anchor is not None), role_headword=headword,
+            recall_source=src, recall_candidates=cands,
+        )
+
+    def _lineage_judge(self, name: str, *, batch_size: int,
+                       input_candidates: list[str] | None,
+                       resolves_to: str | None, missing: bool, error: str | None) -> None:
+        """③ judge 层事件。"""
+        if not self._lineage.enabled:
+            return
+        lid = self._lineage_id(name)
+        if lid is None:
+            return
+        self._lineage.judge(
+            lineage_id=lid, chunk_id=self._current_chunk_id,
+            chapter_id=self._current_chapter_id, section_type=self._current_section_type.value,
+            mention=name, judge_called=True, judge_input_mentions_count=batch_size,
+            judge_input_candidates=input_candidates, judge_resolves_to=resolves_to,
+            judge_missing=missing, judge_error=error,
+        )
+
+    def _lineage_admission(self, name: str, admission: str, reason: str | None = None,
+                           evidence_count: int | None = None,
+                           role_confirmed: bool = False, role_blocked: bool = False) -> None:
+        """④ admission 层事件。"""
+        if not self._lineage.enabled:
+            return
+        lid = self._lineage_id(name)
+        if lid is None:
+            return
+        self._lineage.admission(
+            lineage_id=lid, chunk_id=self._current_chunk_id,
+            chapter_id=self._current_chapter_id, section_type=self._current_section_type.value,
+            mention=name, admission=admission, admission_reason=reason,
+            evidence_count=evidence_count, role_confirmed=role_confirmed,
+            role_blocked=role_blocked,
+        )
+
+    def _lineage_registration(self, name: str, registered: bool, alias_to: str | None = None,
+                              final_canonical: str | None = None,
+                              provisional: bool = False) -> None:
+        """⑤ registration 层事件。"""
+        if not self._lineage.enabled:
+            return
+        lid = self._lineage_id(name)
+        if lid is None:
+            return
+        self._lineage.registration(
+            lineage_id=lid, chunk_id=self._current_chunk_id,
+            chapter_id=self._current_chapter_id, section_type=self._current_section_type.value,
+            mention=name, registered=registered, alias_to=alias_to,
+            final_canonical=final_canonical, provisional=provisional,
+        )
+
+    def _register_outcome(self, name: str) -> tuple[str, bool, str | None, bool]:
+        """镜像 _register_or_unresolved / _register_mention 的分派（仅观测用；业务逻辑变更需同步）。
+
+        returns (admission_label, registered, final_canonical, provisional)
+        """
+        cat = self._category_of(name)
+        nonbody = self._current_section_type != SectionType.BODY
+        if (not nonbody) and cat in (MentionCategory.DESCRIPTIVE, MentionCategory.COMPOSITE):
+            return "null_unresolved", False, None, False
+        if nonbody and cat in (MentionCategory.DESCRIPTIVE, MentionCategory.COMPOSITE):
+            return "nonbody_dropped", False, None, False
+        return "null_registered", True, name, nonbody
+
+    def _role_drop_facts(self, mention: str, target: str) -> tuple[str, str | None, int]:
+        """P16-b gate drop 的 admission 标签/原因/evidence_count（decision 后状态反推；纯观测）。"""
+        if mention in self._role_blocked:
+            return "blocked", "cross_canonical_conflict", 0
+        if mention in self._role_observations:
+            return "observation", "single_evidence", 1
+        kind, has_de, anchor, headword = self.classify_role_mention(mention)
+        if kind == "qualified":
+            if has_de:
+                if target != headword:
+                    return "reject", "target_mismatch", 0
+                if anchor is not None and not self._anchor_in_text(anchor):
+                    return "reject", "anchor_mismatch", 0
+                return "reject", "gate_mismatch", 0
+            if anchor is not None and target == headword and not self._anchor_in_text(anchor):
+                return "reject", "anchor_mismatch", 0
+            return "reject", "target_mismatch", 0
+        return "reject", "evidence_lt_2", 0
+
+    def _role_accept_label(self, mention: str, target: str) -> str:
+        if (mention, target) in self._role_confirmed:
+            return "confirmed"
+        return "accept"
+
     def _text_mentions(self, chunk_text: str) -> set[str]:
         """chunk 原文中出现的已知 canonical/alias → 对应 canonical 集合。
 
@@ -283,6 +497,14 @@ class EntityResolver:
                 self._promote(canonical)
             if canonical not in self._provisional:
                 confirmed.add(canonical)  # 已确认 → 成为后续同名 chunk 内共现候选源
+            # ---- V0.2.7 lineage：known-hit（② recall + ④⑤ 终态；旁路观测）----
+            self._lineage_recall(name, [], source="known_hit")
+            self._lineage_admission(name, "known_hit", reason="known_hit")
+            self._lineage_registration(
+                name, registered=True,
+                alias_to=(canonical if canonical != name else None),
+                final_canonical=canonical, provisional=(canonical in self._provisional),
+            )
             return canonical, False
         # V0.2.4：硬过滤 mention 永不注册（防御：即使漏过 resolve 开头过滤）
         if is_hard_filtered(name):
@@ -290,8 +512,13 @@ class EntityResolver:
                 self.hygiene_stats["collective_filtered"] += 1
             else:
                 self.hygiene_stats["invalid_filtered"] += 1
+            # ---- lineage：hard filter 剔除（防御路径）----
+            self._lineage_admission(name, "skipped_hardfilter", reason="collective_or_invalid")
+            self._lineage_registration(name, registered=False, alias_to=None, final_canonical=None)
             return name, False   # 不注册、不进 pending——原样返回（characters/关系保留原名，无害）
         candidates = self._recall(name, confirmed, text_confirmed)
+        # ---- V0.2.7 lineage：② recall / role 判定层（旁路观测）----
+        self._lineage_recall(name, candidates, confirmed, text_confirmed)
         # V0.2.4-b RC3：category precedence（评审锁定）——
         # 1. COLLECTIVE / INVALID hard rules（已在上方 is_hard_filtered 分支处理）
         # 2. relational-generic exact-match → 强制 GENERIC（无论 LLM category 是 PERSON/None/其他，
@@ -307,17 +534,25 @@ class EntityResolver:
         if not candidates:
             if cat == MentionCategory.GENERIC:
                 self.hygiene_stats["generic_filtered"] += 1
+                # ---- lineage：GENERIC 无候选丢弃（④⑤）----
+                self._lineage_admission(name, "skipped_generic", reason="no_candidates")
+                self._lineage_registration(name, registered=False, alias_to=None, final_canonical=None)
                 return name, False   # 丢弃，不注册 canonical
             # V0.2.5-a：非正文 DESCRIPTIVE/COMPOSITE 无候选 → 永不注册，丢弃计数
             if (self._current_section_type != SectionType.BODY
                     and cat in (MentionCategory.DESCRIPTIVE, MentionCategory.COMPOSITE)):
                 self.hygiene_stats["nonbody_descriptive_dropped"] += 1
                 self._chunk_dropped.add(name)
+                # ---- lineage：非正文 DESCRIPTIVE/COMPOSITE 无候选丢弃（④⑤）----
+                self._lineage_admission(name, "nonbody_dropped", reason="nonbody_descriptive_no_candidates")
+                self._lineage_registration(name, registered=False, alias_to=None, final_canonical=None)
                 return name, False
             # V0.2.5-b：BODY DESCRIPTIVE/COMPOSITE 无候选 → deferred（不立即注册；
             # canonical 创建推迟到 chunk 末决策边界：重召回 + 单次 judge 后再定）
             if cat in (MentionCategory.DESCRIPTIVE, MentionCategory.COMPOSITE):
                 self._deferred.append(name)
+                # ---- lineage：deferred（④ 暂记；chunk 末重召回后出最终 admission）----
+                self._lineage_admission(name, "deferred", reason="body_descriptive_no_candidates")
                 return name, False
             # PERSON / DESCRIPTIVE / COMPOSITE / None → 注册 canonical（兜底不静默丢人物）
             # V0.2.5-a：非正文 → provisional（不参与候选源；BODY 确认后晋升）
@@ -325,6 +560,10 @@ class EntityResolver:
             self._register(name, provisional=provisional)
             if not provisional:
                 confirmed.add(name)
+            # ---- lineage：无候选注册 canonical（④⑤）----
+            self._lineage_admission(name, "accept", reason="register_canonical")
+            self._lineage_registration(name, registered=True, alias_to=None,
+                                       final_canonical=name, provisional=provisional)
             return name, False
         return name, True  # 进 pending（GENERIC/DESCRIPTIVE/COMPOSITE/PERSON 均可 judge）
 
@@ -404,26 +643,58 @@ class EntityResolver:
         candidates_by_mention = {p.mention: p.candidates for p in pending}
         from app.pipeline.hygiene import classify_mention, is_hard_filtered
         for r in judge_result.resolutions:
+            # ---- V0.2.7 lineage：③ judge 层（先记录原始判定输出，再走约束校验；旁路观测）----
+            self._lineage_judge(
+                r.mention, batch_size=len(pending),
+                input_candidates=[c.canonical for c in candidates_by_mention.get(r.mention, [])],
+                resolves_to=r.resolves_to, missing=False, error=None,
+            )
             if r.mention not in valid_mentions:
+                self._lineage_admission(r.mention, "invalid_judge_output", reason="mention_not_in_pending")
+                self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
                 continue  # 约束：mention 必须来自输入
             if r.resolves_to is not None and r.resolves_to not in valid_canonicals:
+                self._lineage_admission(r.mention, "invalid_judge_output", reason="resolves_to_not_in_candidates")
+                self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
                 continue  # 约束：resolves_to 必须来自候选
             if r.resolves_to is not None and is_hard_filtered(r.resolves_to):
+                self._lineage_admission(r.mention, "invalid_judge_output", reason="resolves_to_hard_filtered")
+                self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
                 continue  # V0.2.4 防御：不吸收硬过滤 canonical
             if is_hard_filtered(r.mention):
+                self._lineage_admission(r.mention, "invalid_judge_output", reason="mention_hard_filtered")
+                self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
                 continue  # V0.2.4 防御：被硬过滤 mention 的判定结果不写 known
             # V0.2.4-b RC3：relational generic（词表判定 GENERIC）判 null → 丢弃，不注册 canonical
             if r.resolves_to is None and classify_mention(r.mention) == MentionCategory.GENERIC:
+                # ---- lineage：GENERIC null 丢弃（④⑤）----
+                self._lineage_admission(r.mention, "skipped_generic", reason="generic_null")
+                self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
                 continue
             if r.resolves_to is None:
                 # V0.2.5-b：DESCRIPTIVE/COMPOSITE null → unresolved（不写 known）；
                 # PERSON/None → 既有 fail-safe（非正文 → -a provisional 语义）
                 self._register_or_unresolved(r.mention)
+                # ---- lineage：judge null 分派（④⑤，镜像 _register_or_unresolved）----
+                label, registered, final, prov = self._register_outcome(r.mention)
+                self._lineage_admission(r.mention, label, reason="judge_null")
+                self._lineage_registration(
+                    r.mention, registered=registered,
+                    alias_to=(final if registered and final != r.mention else None),
+                    final_canonical=final, provisional=prov,
+                )
                 continue
             # V0.2.6 P16-b：role alias 准入（bare 证据门槛 / qualified 对齐 + anchor 在场）
             if self._role_alias_decision(
                     r.mention, r.resolves_to, candidates_by_mention.get(r.mention, [])) == "drop":
                 self._unresolved.add(r.mention)   # 不可确认 → 输出剔除（不注册、不 alias、不入图）
+                # ---- lineage：④ admission（gate 拒绝）+ ⑤ 未注册 ----
+                label, reason, ev_count = self._role_drop_facts(r.mention, r.resolves_to)
+                self._lineage_admission(
+                    r.mention, label, reason=reason, evidence_count=ev_count,
+                    role_confirmed=False, role_blocked=(r.mention in self._role_blocked),
+                )
+                self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
                 continue
             # 有效 resolves_to → 既有 alias/resolution 语义（含 deferred 重召回后并入 pending 者）
             self.known[r.mention] = r.resolves_to
@@ -434,6 +705,15 @@ class EntityResolver:
                 self.hygiene_stats["descriptive_resolved"] += 1
             elif cat == MentionCategory.COMPOSITE:
                 self.hygiene_stats["composite_resolved"] += 1
+            # ---- V0.2.7 lineage：④ admission（accept/confirmed）+ ⑤ alias 注册 ----
+            self._lineage_admission(
+                r.mention, self._role_accept_label(r.mention, r.resolves_to),
+                reason=None, role_confirmed=((r.mention, r.resolves_to) in self._role_confirmed),
+            )
+            self._lineage_registration(
+                r.mention, registered=True, alias_to=r.resolves_to,
+                final_canonical=r.resolves_to,
+            )
         # 未出现在判定结果中的 pending mention → 独立 canonical（防御）
         judged = {r.mention for r in judge_result.resolutions}
         for p in pending:
@@ -445,7 +725,20 @@ class EntityResolver:
                 if classify_mention(p.mention) == MentionCategory.GENERIC:
                     continue
                 # V0.2.5-b：DESCRIPTIVE/COMPOSITE 缺席 → unresolved；其余走 -a 语义
+                # ---- V0.2.7 lineage：③ judge missing（防御路径）+ ④⑤ 分派 ----
+                self._lineage_judge(
+                    p.mention, batch_size=len(pending),
+                    input_candidates=[c.canonical for c in p.candidates],
+                    resolves_to=None, missing=True, error=None,
+                )
                 self._register_or_unresolved(p.mention)
+                label, registered, final, prov = self._register_outcome(p.mention)
+                self._lineage_admission(p.mention, label, reason="judge_missing")
+                self._lineage_registration(
+                    p.mention, registered=registered,
+                    alias_to=(final if registered and final != p.mention else None),
+                    final_canonical=final, provisional=prov,
+                )
 
     def _register(self, name: str, provisional: bool = False):
         """name 成为新的 canonical（首次出现）。

@@ -83,7 +83,7 @@
 | P14 | 依赖/驱动 API 坑汇总 | 基础设施 | ✅ | Medium | HIGH | — |
 | P16 | 非正文（版权/题记/推广）污染 canonical 首现 | ER 算法 | ✅ | High | HIGH | [P016](docs/problems/P016-metadata-context-pollution.md) |
 | P17 | DESCRIPTIVE 首现碎片化（无候选直接建 canonical） | ER 算法 | 🔍 | High | HIGH | [P017](docs/problems/P017-descriptive-fragmentation.md) |
-| P18 | 正文 relational-role canonical sink（P16-b：父亲→顺顺 类吸收） | ER 算法 / judge | 🔍 | Medium | HIGH | [P018](docs/problems/P018-relational-role-canonical-sink.md) |
+| P18 | 正文 relational-role canonical sink（P16-b：父亲→顺顺 类吸收） | ER 算法 / judge | ✅ | Medium | HIGH | [P018](docs/problems/P018-relational-role-canonical-sink.md) |
 
 ---
 
@@ -96,6 +96,7 @@
 - **Trigger**: 同样 judge 输入不同结果；两次 ingest 不一致；人物节点出现泛指词
 - **区分**: 非确定性(P06) vs 限流(P05) vs 欠费(P04) vs 候选召回(P08) vs mention hygiene(P09)——先看 `[llm]` 日志 code
 - **当前状态**: judge 为唯一合并决策点；测试 mock；评估多次取趋势；**不把所有 ER 失败归因于 P06**
+- **Task A（V0.2.7）**: lineage 观测已上线（`ER_LINEAGE=1`，默认关零开销）——extraction/recall/judge/admission/registration 全层事件经 `lineage_id` 关联，`tools/diagnose_lineage.py` 离线归层（翠翠的祖父/岳云二老/弟弟/爷爷）。见 [Task A spec](docs/superpowers/specs/2026-08-27-p06-lineage-observability-design.md)
 - → [P006 完整记录](docs/problems/P006-judge-nondeterminism.md)
 
 ### P08 — Entity Resolution：zero-overlap 分裂与 canonical 合并质量
@@ -131,8 +132,8 @@
 ### P18 — 正文 relational-role canonical sink（P16-b）
 
 - **Trigger**: 正文角色称谓被 canonical 吸收（顺顺 aliases 含 父亲/爸爸/爹爹/中年人）；同一称谓指代多人物（父亲 = 顺顺 / 翠翠之父 / 老船夫）
-- **当前状态**: 诊断+设计评审中（v2 已修复 finalize 绕过 gate 矛盾：observation 永不自动晋升 + 跨 canonical 冲突→blocked + 触发范围收窄；spec `2026-08-26-p16b-relational-role-design.md`）；父亲 因跨人物证据正确地不 alias（防 sink）
-- → [P018 完整记录](docs/problems/P018-relational-role-canonical-sink.md) / [V0.2.6 spec](docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md)
+- **当前状态**: ✅ **V0.2.6 已实现并验收（mechanism PASS / capability PARTIAL，冻结不修）**——爹爹→顺顺 confirmed（≥2 独立证据实证）；父亲 跨人物裸 role 被拦截不入图、非 Person；翠翠的父亲 qualified 拦截成功；顺顺 aliases 8→3（父亲 退出 sink）；老船夫→祖父 等既有路径零破坏。残留：**P017 D5**（爸爸/母亲 category=None/PERSON 绕过 gate → 独立 Person，Known Limitation）；**翠翠的祖父 未建立**（P06 链路未落盘无法归层）。Follow-up：Task A（P06 lineage 观测）/ Task B（P017 D5 设计），**不改 P16-b**
+- → [P018 完整记录](docs/problems/P018-relational-role-canonical-sink.md) / [V0.2.6 spec](docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md) / [V0.2.6 验收报告](docs/evaluation/2026-08-27-biancheng-v026-eval.md)
 
 ---
 
@@ -174,7 +175,7 @@
 | [P011-all-chunks-failed-status.md](docs/problems/P011-all-chunks-failed-status.md) | P11 全 chunk 失败状态 |
 | [P016-metadata-context-pollution.md](docs/problems/P016-metadata-context-pollution.md) | P16 非正文上下文污染 canonical 首现（✅ PASS） |
 | [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化（PARTIAL，D5 缺口） |
-| [P018-relational-role-canonical-sink.md](docs/problems/P018-relational-role-canonical-sink.md) | P18 正文 relational-role canonical sink（P16-b，待设计） |
+| [P018-relational-role-canonical-sink.md](docs/problems/P018-relational-role-canonical-sink.md) | P18 正文 relational-role canonical sink（P16-b，✅ mechanism PASS / capability PARTIAL，冻结） |
 
 **中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md 对应规则中。
 
@@ -182,3 +183,4 @@
 - `2026-08-21-biancheng-er-eval.md`（《边城》ER 评估）
 - `2026-08-21-biancheng-er-stability.md`（稳定性评估，P06 证据源）
 - `2026-08-26-biancheng-v025-eval.md`（V0.2.5-a/b 真实评估验收与归因：P16-a PASS、P17 PARTIAL/D5 缺口、P16-b 首次干净观察、merge 继续 INCONCLUSIVE）
+- `2026-08-27-biancheng-v026-eval.md`（V0.2.6 P16-b 真实评估验收：爹爹 confirmed / 父亲 拦截 / 翠翠的父亲 拦截 / 顺顺 sink 收敛；爸爸 D5 缺口；翠翠的祖父 归 P06 观测缺口；merge INCONCLUSIVE）

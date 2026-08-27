@@ -1,11 +1,11 @@
 # P017 — DESCRIPTIVE First-Seen Canonical Fragmentation：描述性称谓无候选直接建 canonical
 
-- **Status**: 🔍 investigating（V0.2.5-b 已实现并验证 **PARTIAL**：B1 机制生效（unresolved 10 次），ch5b 一族未收敛系 D5 category 缺口；B2 后续）
-- **Severity**: High（一族 6 碎片；45/61 节点 mc=1 单章）
-- **Domain**: ER 算法 / canonical 注册策略
-- **Tags**: er, descriptive, canonical-registration, first-seen, order-sensitivity, fragmentation
+- **Status**: 🔍 investigating（V0.2.5-b 已实现并验证 **PARTIAL**：B1 机制生效（unresolved 10 次），ch5b 一族未收敛系 D5 category 缺口；B2 后续；**V0.2.6 再实证 D5（爸爸/母亲 绕过 role gate），D5 独立立项 Task B**）
+- **Severity**: High（一族 6 碎片；45/61 节点 mc=1 单章；V0.2.6 中 D5 同时影响 P16-b role admission）
+- **Domain**: ER 算法 / canonical 注册策略 / extraction classification
+- **Tags**: er, descriptive, canonical-registration, first-seen, order-sensitivity, fragmentation, d5, category-coverage
 - **First Seen**: V0.2.4 真实《边城》评估（job `634f7f96`，novel `5c311fb3`）
-- **Last Verified**: 2026-08-26 真实评估（job `1b7b7c1b`，novel `0ef3bd31`）
+- **Last Verified**: 2026-08-27 真实评估（job `d002fdec`，novel `3a54e06a`：爸爸/母亲 category=None/PERSON 绕过 P16-b role gate）
 - **Evidence Level**: HIGH（ch5b 同 chunk 共现 + 碎片清单为确定性事实）；MEDIUM（judge 反序下是否合并依赖模型）
 - **Decision Type**: EXPERIMENT_RESULT（真实评估观察）+ DESIGN_DECISION（V0.2.5-b：unresolved 不注册）
 - **Related Problems**: P08（first-seen locking 机制）；P10（顺序敏感家族）；P06（judge 判定方差）；P16（共用注册缝，策略独立）；P09（trade-off 被 D2 有意取代）
@@ -131,7 +131,7 @@ Step 5  重放（mock 双序）→ 确认顺序敏感（实现后做 M1/M2）
 ## 18. Follow-up
 
 - ✅ -b 实现 + 真实评估 PARTIAL（见 §15）。
-- **D5 / P06 follow-up**：extraction category 覆盖率与质量（category=None 时 B1 不生效；本次 39 个 mc=1 中规则推断 24 个潜在非专名碎片候选——真实 category 分布需重放或链路日志确认）。
+- **D5 / P06 follow-up（Task B，独立立项）**：extraction category 覆盖率与质量（category=None 时 B1 不生效；V0.2.6 再实证——爸爸/母亲 绕过 P16-b role gate）。**问题边界与候选方案见 spec `docs/superpowers/specs/2026-08-27-p017-d5-category-coverage-design.md`**（先 Task A lineage 量化 → prompt 增强 A/B → 结构补标评审 → 或 Accepted Limitation，不直接改 P16-b）。
 - **B2**（跨 chunk/跨章 deferred）独立设计（真实评估一族 4 名绕过 B1 亦与 B1 的 chunk 内范围有关）。
 - RC2 覆盖面缺口（两个小孩子/两个年青人）→ P09 follow-up。
 

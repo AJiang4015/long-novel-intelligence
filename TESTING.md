@@ -28,7 +28,10 @@
 - **Mock LLM**：`llm_client` 通过注入 `http_client`（`FakeHttpClient`）模拟响应；`resolver` 通过注入 `judge` 可调用对象
 - **deterministic**：不允许依赖真实 LLM/网络/时间
 - 不依赖外部网络、不连接 Neo4j、不读 `.env` 之外的配置
-- 现有文件：`tests/unit/{test_config,test_chunker,test_merger,test_llm_client,test_job_store,test_resolver}.py`
+- **文件落盘**：P12 沙箱限制——pytest `tmp_path`（mode=0o700）目录会被沙箱锁定，测试**默认不落盘**（BytesIO）；
+  必须落盘的用例（如 `test_lineage.py` 的 recorder flush / diagnose JSONL）写入工作区 `../.tmp/lineage-tests/`
+  并在 teardown 清理（fixture `ws_tmp`；`.tmp/` 已 gitignore）
+- 现有文件：`tests/unit/{test_config,test_chunker,test_merger,test_llm_client,test_job_store,test_resolver,test_hygiene,test_resolver_context,test_resolver_descriptive,test_role_policy,test_sections,test_merge,test_lineage}.py`
 - Resolver 语义锁死用例（`test_resolver.py`）不可削弱，见 §8
 
 ### Integration（`cd backend && python -m pytest -m integration`）

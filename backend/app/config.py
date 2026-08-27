@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     neo4j_password: str
     merge_confidence_threshold: float = 0.5   # V0.2.3-b：canonical merge 置信度阈值（可配置）
 
+    # ---- V0.2.7 Task A：P06 lineage 观测（默认全关；关闭时 recorder 为 no-op，零开销）----
+    er_lineage: bool = False                   # env ER_LINEAGE：mention lineage 总开关（默认 off）
+    er_lineage_dir: str = "lineage"            # env ER_LINEAGE_DIR：lineage JSONL 输出目录（相对 backend cwd）
+    er_lineage_raw_extraction: bool = False    # env ER_LINEAGE_RAW_EXTRACTION：原始 extraction 三元组 dump
+                                               # （debug 能力，默认 off；深挖 extraction 时显式开启）
+
 
 @lru_cache
 def get_settings() -> Settings:
