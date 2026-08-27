@@ -32,6 +32,8 @@
 - 不把「LLM 不稳定」当单一问题：先区分 非确定性(P06)/限流(P05)/欠费(P04)/候选召回(P08)/mention hygiene(P09)
 - **不把「429 根因=concurrency=4」当事实**（已证伪，见 P005）
 - **不把 ER 失败一律归因于 judge**（P06 ≠ P04/P05/P08/P09）
+- **不把「父亲/母亲/祖父」加入 generic 词表**（P16 是 context 问题；正文真实人物，RC3 已锁）
+- **非正文专名（兆和/沈从文）保留于抽取输出；无正文确认不入图**（V0.2.5-a provisional/flush）
 
 ---
 
@@ -54,6 +56,8 @@
 | 全 chunk failed 但 job completed_with_errors | job terminal state 判定 | P11 |
 | 未知 mention 候选随顺序变化 | chunk 预扫描是否在 resolve 开头 | P10 |
 | failed_blocks 只有 unexpected:LLMError | `[llm]` 日志 status/body | P07 |
+| canonical chapters 含非正文（版权/题记/推广，如 1/2/3/25） | 非正文 canonical 清单（MATCH Person 的 chapters 交集） | P16 |
+| 描述性称谓与真名分裂（大儿子↔天保、长子/次子 独立节点） | chunk 内首现顺序重放（mock judge 双序） | P17 |
 
 ---
 
@@ -75,6 +79,8 @@
 | P12 | 沙箱/环境限制清单 | 环境与沙箱 | ✅ | Medium | HIGH | — |
 | P13 | 脚本超时杀 + stdout 缓冲丢输出 | 环境与沙箱 | ✅ | Low | HIGH | — |
 | P14 | 依赖/驱动 API 坑汇总 | 基础设施 | ✅ | Medium | HIGH | — |
+| P16 | 非正文（版权/题记/推广）污染 canonical 首现 | ER 算法 | 🔍 | High | HIGH | [P016](docs/problems/P016-metadata-context-pollution.md) |
+| P17 | DESCRIPTIVE 首现碎片化（无候选直接建 canonical） | ER 算法 | 🔍 | High | HIGH | [P017](docs/problems/P017-descriptive-fragmentation.md) |
 
 ---
 
@@ -106,6 +112,18 @@
 - **Trigger**: job 状态 `completed_with_errors` 但 failed_blocks = 总 chunk 数
 - **当前状态**: 终态判定缺「全部失败 → failed」分支，代码变更未授权
 - → [P011 完整记录](docs/problems/P011-all-chunks-failed-status.md)
+
+### P16 — 非正文（版权/题记/推广）污染 canonical 首现
+
+- **Trigger**: canonical chapters 含非正文章节（如 1/2/3/25）；正文高频实体被题记亲属称谓 canonical 吸收（父亲→顺顺）
+- **当前状态**: V0.2.5-a 设计已锁定（section 分类 + provisional/promotion/flush），未实现；P16-b（正文内 relational-role sink）另行诊断
+- → [P016 完整记录](docs/problems/P016-metadata-context-pollution.md) / [V0.2.5-a spec](docs/superpowers/specs/2026-08-26-v025a-context-er-design.md)
+
+### P17 — DESCRIPTIVE 首现碎片化
+
+- **Trigger**: DESCRIPTIVE/COMPOSITE 无候选直接建 canonical（大儿子/长子/次子 与 天保/傩送 分裂）；chunk 内首现顺序敏感
+- **当前状态**: V0.2.5-b 设计已锁定（chunk 内 deferred + 单次 batch judge + unresolved 不注册），未实现；B2（跨 chunk deferred）后续
+- → [P017 完整记录](docs/problems/P017-descriptive-fragmentation.md) / [V0.2.5-b spec](docs/superpowers/specs/2026-08-26-v025b-descriptive-policy-design.md)
 
 ---
 
@@ -145,9 +163,12 @@
 | [P009-mention-hygiene.md](docs/problems/P009-mention-hygiene.md) | P09 mention hygiene 污染 |
 | [P010-cooccurrence-order-sensitivity.md](docs/problems/P010-cooccurrence-order-sensitivity.md) | P10 共现顺序敏感 |
 | [P011-all-chunks-failed-status.md](docs/problems/P011-all-chunks-failed-status.md) | P11 全 chunk 失败状态 |
+| [P016-metadata-context-pollution.md](docs/problems/P016-metadata-context-pollution.md) | P16 非正文上下文污染 canonical 首现 |
+| [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化 |
 
 **中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md 对应规则中。
 
 **Evaluation Reports**（`docs/evaluation/`）：
 - `2026-08-21-biancheng-er-eval.md`（《边城》ER 评估）
 - `2026-08-21-biancheng-er-stability.md`（稳定性评估，P06 证据源）
+- `2026-08-26-biancheng-v025-eval.md`（V0.2.5-a/b 真实评估验收与归因：P16-a PASS、P17 PARTIAL/D5 缺口、P16-b 首次干净观察、merge 继续 INCONCLUSIVE）
