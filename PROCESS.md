@@ -86,6 +86,26 @@ Commit
 6. 是否更新 PROBLEM.md
 ```
 
+### 4.5 行为变更文档同步检查
+
+任何业务行为变化（代码 / 测试 / prompt / 配置 / 数据语义）在提交前执行：
+
+```text
+Code change
+   ↓
+检查：
+Decision?   → DECISIONS.md（是否有 D-XX 描述旧行为）
+Problem?    → PROBLEM.md / docs/problems（是否有 PXX 记录旧行为）
+Layer?      → *_LAYER.md（是否变更层边界 / 决策所有权）
+Testing?    → TESTING.md（回归清单 / 验收指标 / 报告模板是否需更新）
+Evaluation? → docs/evaluation/ + TESTING §9.1（新实验结果是否需落盘）
+   ↓
+需要更新 → 同一变更中同步更新对应事实源（禁止文档滞后）
+```
+
+- 同步纪律（必须遵守）见 `AGENTS.md` §7。
+- 允许跨文档简短引用 / 摘要 / 指针；完整规则只在事实源写一份（重复边界见 `AGENTS.md` §0）。
+
 ## 5. 核心组件修改准入（prompt / resolver / schema / merger 等）
 
 - **前置条件（缺一不可）**：
