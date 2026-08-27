@@ -61,6 +61,11 @@ def _run_ingest(novel_id: str, job_id: str, title: str, epub_bytes: bytes,
         merge_map = merge_out["merge_map"]
         from app.pipeline.merger import apply_merges
         apply_merges(merged, merge_map)
+        # V0.2.5-a：flush 未获正文确认的 provisional canonical（不入图；端点关系丢弃）
+        from app.pipeline.merger import drop_unconfirmed_entities
+        dropped = resolver.finalize()
+        if dropped:
+            merged = drop_unconfirmed_entities(merged, dropped)
         db.upsert_novel(novel_id, title, [{"id": c.chapter_id, "title": c.chapter_title} for c in chapters])
         db.upsert_graph(novel_id, merged, merge_map)
         stats = db.count_stats(novel_id)

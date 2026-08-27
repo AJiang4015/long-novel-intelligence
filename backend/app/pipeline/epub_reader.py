@@ -4,6 +4,8 @@ from io import BytesIO
 
 from ebooklib import ITEM_DOCUMENT, epub
 
+from app.pipeline.sections import SectionType, classify_chapter
+
 _TAG_RE = re.compile(r"<[^>]+>")
 _ENTITY_RE = re.compile(r"&(nbsp|amp|lt|gt|quot);")
 
@@ -13,6 +15,7 @@ class Chapter:
     chapter_id: int
     chapter_title: str
     text: str
+    section_type: SectionType = SectionType.BODY   # V0.2.5-a：read_epub 内分类
 
 
 def _strip_html(html: str) -> str:
@@ -37,4 +40,7 @@ def read_epub(epub_bytes: bytes) -> list[Chapter]:
             continue
         title = (getattr(item, "title", "") or "").strip() or f"第{len(chapters) + 1}章"
         chapters.append(Chapter(chapter_id=len(chapters) + 1, chapter_title=title, text=text))
+    # V0.2.5-a：章节分类（内容/位置启发式；默认 BODY）
+    for i, ch in enumerate(chapters):
+        ch.section_type = classify_chapter(ch.chapter_title, ch.text, i, len(chapters))
     return chapters

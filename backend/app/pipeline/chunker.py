@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.pipeline.epub_reader import Chapter
+from app.pipeline.sections import SectionType
 
 
 @dataclass
@@ -11,6 +12,7 @@ class Chunk:
     text: str
     start_offset: int
     end_offset: int
+    section_type: SectionType = SectionType.BODY   # V0.2.5-a：继承所属章节
 
 
 def chunk_chapters(chapters: list[Chapter], chunk_size: int, overlap: int) -> list[Chunk]:
@@ -28,14 +30,16 @@ def chunk_chapters(chapters: list[Chapter], chunk_size: int, overlap: int) -> li
         if not text:
             continue
         if len(text) <= chunk_size:
-            chunks.append(Chunk(chunk_id, chapter.chapter_id, chapter.chapter_title, text, 0, len(text)))
+            chunks.append(Chunk(chunk_id, chapter.chapter_id, chapter.chapter_title, text, 0, len(text),
+                                section_type=chapter.section_type))
             chunk_id += 1
             continue
         step = max(1, chunk_size - overlap)
         start = 0
         while start < len(text):
             end = min(start + chunk_size, len(text))
-            chunks.append(Chunk(chunk_id, chapter.chapter_id, chapter.chapter_title, text[start:end], start, end))
+            chunks.append(Chunk(chunk_id, chapter.chapter_id, chapter.chapter_title, text[start:end], start, end,
+                                section_type=chapter.section_type))
             chunk_id += 1
             if end == len(text):
                 break

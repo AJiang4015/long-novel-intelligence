@@ -160,3 +160,20 @@ def apply_merges(graph: MergedGraph, merge_map: dict[str, str]) -> None:
                     break
                 existing.evidence.append(item)
     graph.relationships = new_rels
+
+
+def drop_unconfirmed_entities(graph: MergedGraph, dropped: set[str]) -> MergedGraph:
+    """V0.2.5-a：排除未获正文确认的 provisional 实体及其关系（upsert 前调用）。
+
+    - 移除 canonical ∈ dropped 的 Person；
+    - 移除 source/target 任一 ∈ dropped 的 RELATES_TO（端点丢弃规则，与 RC2 同构）；
+    - 不修改 aliases（provisional 从未被吸收为 alias）、不改 merge_map。
+    """
+    if not dropped:
+        return graph
+    graph.persons = {name: p for name, p in graph.persons.items() if name not in dropped}
+    graph.relationships = {
+        key: rel for key, rel in graph.relationships.items()
+        if rel.source not in dropped and rel.target not in dropped
+    }
+    return graph
