@@ -3,7 +3,8 @@
 > 本文件是**问题索引 + 诊断路由**，不承载长篇事故过程。
 > 完整 forensic / postmortem / engineering record 在 `docs/problems/Pxxx-*.md`。
 > 真实数据实验记录在 `docs/evaluation/`（Problem Record 只引用，不内嵌）。
-> 维护规则与记录标准见 `AGENTS.md` §10（含 Problem Knowledge Rule）。
+> 维护规则与记录标准见本文 §6（Problem Knowledge Rule 由本文件自持，不再依赖 AGENTS.md）。
+> 硬性禁止项（全库删除 / 跨 novel_id / diagnose 只读等）权威位置见 `AGENTS.md` §2/§3。
 
 ---
 
@@ -35,6 +36,7 @@
 - **不把「父亲/母亲/祖父」加入 generic 词表**（P16 是 context 问题；正文真实人物，RC3 已锁）
 - **非正文专名（兆和/沈从文）保留于抽取输出；无正文确认不入图**（V0.2.5-a provisional/flush）
 - **不因「顺顺→父亲 正文内吸收仍存在」判 P16-a/P17 失败**（P16-b 已单独立项 P018；角色称谓吸收语义可能正确）
+- **问题归因到拥有该决策的层**（extraction ≠ recall ≠ judge ≠ admission ≠ registration ≠ merge），层归属矩阵见 `backend/app/pipeline/PIPELINE_LAYER.md` §4；不「哪里方便改就改哪里」
 
 ---
 
@@ -178,7 +180,7 @@
 | [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化（PARTIAL，D5 缺口） |
 | [P018-relational-role-canonical-sink.md](docs/problems/P018-relational-role-canonical-sink.md) | P18 正文 relational-role canonical sink（P16-b，✅ mechanism PASS / capability PARTIAL，冻结） |
 
-**中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md 对应规则中。
+**中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md/PROCESS.md 对应规则中。
 
 **Evaluation Reports**（`docs/evaluation/`）：
 - `2026-08-21-biancheng-er-eval.md`（《边城》ER 评估）
@@ -186,3 +188,46 @@
 - `2026-08-26-biancheng-v025-eval.md`（V0.2.5-a/b 真实评估验收与归因：P16-a PASS、P17 PARTIAL/D5 缺口、P16-b 首次干净观察、merge 继续 INCONCLUSIVE）
 - `2026-08-27-biancheng-v026-eval.md`（V0.2.6 P16-b 真实评估验收：爹爹 confirmed / 父亲 拦截 / 翠翠的父亲 拦截 / 顺顺 sink 收敛；爸爸 D5 缺口；翠翠的祖父 归 P06 观测缺口；merge INCONCLUSIVE）
 - `2026-08-27-biancheng-task-a-lineage-eval.md`（V0.2.7 Task A lineage 验收：四案例归层——翠翠的祖父=EXTRACTION_LAYER / 岳云二老·弟弟·爷爷=SUCCESS；Task B 决策输入：extraction 覆盖缺失 + LLM category null 路径不一致）
+
+---
+
+## 6. 维护规则与记录标准（Problem Knowledge Rule）
+
+> 本规范原位于 `AGENTS.md` §10，现由本文件自持。`AGENTS.md` §1 只保留 5 条 Agent 硬规则。
+
+### 记录标准
+
+**必须记录**（满足任一条）：
+
+- 造成数据损坏/丢失风险
+- 需要花时间排查、根因不明显
+- 可能再次发生（尤其 Agent 很容易重复犯）
+- 有架构/工程决策（含权衡）
+- 外部服务/环境限制（账号、沙箱、限流）
+- 性能/并发问题
+- LLM 特有行为（非确定性、欠费、限流、畸形输出）
+
+**不需要记录**：
+
+- 拼写错误、一眼可见的语法错误、临时 typo
+- 改一个变量名
+- 普通 UI 微调
+
+### 条目结构与 Decision Type
+
+- 完整 Problem Record 存放 `docs/problems/PXXX-*.md`，统一 20 字段模板（见 §5）。
+- 摘要与索引条目保持简洁（本文件只承载地图 + 摘要，不承载事故过程）。
+- 新增问题必须区分 Decision Type：FACT / HYPOTHESIS / EXPERIMENT_RESULT / DESIGN_DECISION / KNOWN_LIMITATION。
+
+### Problem Knowledge Rule（10 条）
+
+1. 开发/Debug 前先阅读本文件（§1 Routing + §2 Index）。
+2. 遇到已知 Trigger 时，先读取对应 `docs/problems/Pxxx-*.md`。
+3. Diagnose 模式只修改诊断文档，不修改代码/数据。
+4. Fix 完成后必须更新对应 Problem Record（含 Validation 与 Do Not Reopen）。
+5. 新增问题必须区分 Decision Type（见上）。
+6. **不删除被证伪假设**（写入 Ruled-out Causes，防止后续 Agent 重复调查）。
+7. 不覆盖历史实验结果。
+8. 不把单次真实 LLM evaluation 当 deterministic fact（Evidence Level 区分 HIGH/MEDIUM/LOW）。
+9. Resolved 问题再次出现，先检查：code regression / environment change / model change / input change，不得直接重复旧修复。
+10. Problem Record 必须记录 Validation 和 Do Not Reopen。

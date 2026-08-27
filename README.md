@@ -30,18 +30,25 @@
 | `GET /api/characters/{character_id}/graph` | 1 跳人物关系子图 |
 | `GET /api/health` | 健康检查（含 Neo4j 连通性） |
 
-## V0.1 已知限制
+## 已知限制
 
-> **Job state is process-local in V0.1 and will be replaced by a persistent task store in later versions.**
+> **Job state is process-local（V0.1 决策）and will be replaced by a persistent task store in later versions.**
 
-- 人物不做别名归并：LLM 输出的不同写法视为不同 Person
+- 人物消歧质量取决于抽取与判定（LLM 非确定性）：真实评估结论见 `docs/evaluation/`，已知问题见 `PROBLEM.md` / `docs/problems/`
 - 关系为有向边，方向仅表示抽取时的主体 → 客体
 - weight = 确认该关系的不同 chunk 数；confidence = 各确认 chunk confidence 的算术平均
 
-## 验收记录（V0.1）
+## 文档
 
-- [ ] 上传 .epub → 进度条（1s 轮询）→ 统计
-- [ ] 搜索人物 → 1 跳关系图（中心高亮/边着色/evidence 侧栏）
-- [ ] 点击节点切换中心人物
-- [ ] 非 epub 文件被拒绝（400）
-- [ ] Neo4j 停止时上传返回 503
+| 文档 | 内容 |
+|---|---|
+| `AGENTS.md` | Agent 必须遵守的硬规则（宪法） |
+| `PROCESS.md` | 项目流程 / 实验纪律 / 验收顺序 |
+| `DECISIONS.md` | 已做出的架构 / 工程决策 |
+| `ARCHITECTURE.md` | 系统结构与数据流 |
+| `PROBLEM.md` | 问题地图 + 诊断路由（`docs/problems/` 为完整记录） |
+| `TESTING.md` | 测试与真实评估规范 |
+| `DESIGN.md` | UI/UX Design System |
+| `backend/app/*/*_LAYER.md` | 各层契约与边界 |
+
+> 后端分层：`api`（HTTP 编排）/ `db`（Neo4j）/ `models`（任务状态机）/ `pipeline`（抽取·消歧·合并·观测）/ `schemas`（契约）。

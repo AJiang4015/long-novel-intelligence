@@ -130,6 +130,8 @@ RETURN p.name, p.aliases;
 
 每次真实评估产出报告（建议存 `docs/evaluation/YYYY-MM-DD-<tag>.md`），必须包含：
 
+> **评估报告声明（强制）**：报告标题与顶部必须注明「本报告是 XX 版本的验证记录，不是下一轮修复方案；任何后续代码修改需另立设计 / Problem Record」。防止「P17 = PARTIAL」等结论被直接当成改代码指令。
+
 ```markdown
 # ER Evaluation Report — <小说名>（<YYYY-MM-DD>）
 
@@ -158,6 +160,24 @@ RETURN p.name, p.aliases;
 ## Known Limitations
 （如：零共享字且不同 chunk 时仍需候选+LLM；判定概率性；mention hygiene 未做）
 ```
+
+### 9.1 版本化验收指标与归因纪律
+
+> 指标随版本演进，标注版本号；归因纪律的权威位置在各 Problem Record（此处为速查）。
+
+**V0.2.5 起验收指标（真实评估必须采集）**：
+
+- 非正文 canonical 数量（期望 0）
+- provisional → promoted / provisional → dropped 计数
+- DESCRIPTIVE resolved / unresolved / canonical 数量
+- ch5b 一族（大儿子/长子/次子/第二个儿子/天保/傩送）canonical 收敛情况
+- P18 观察：正文角色称谓吸收（顺顺 aliases 含 父亲/爸爸/爹爹 类）——正吸收 vs 跨人物错吸
+
+**归因纪律（V0.2.5 起）**：
+
+- `顺顺→父亲` 类正文吸收仍存在 ≠ P16-a/P17 失败（P18 独立问题，角色称谓吸收语义可能正确；先做 aliases 可解释性核对）
+- ch5b 一族未收敛 ≠ B1 机制失败——先查 extraction category（D5 缺口：category=None → PERSON fallback）再查 judge（P06）
+- merge 整体 failed_pairs ≠ 算法失败——batch merge judge 一次异常即全记 failed（INCONCLUSIVE）
 
 ## 附：常用命令速查
 
