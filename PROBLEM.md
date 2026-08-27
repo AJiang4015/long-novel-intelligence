@@ -86,6 +86,7 @@
 | P16 | 非正文（版权/题记/推广）污染 canonical 首现 | ER 算法 | ✅ | High | HIGH | [P016](docs/problems/P016-metadata-context-pollution.md) |
 | P17 | DESCRIPTIVE 首现碎片化（无候选直接建 canonical） | ER 算法 | 🔍 | High | HIGH | [P017](docs/problems/P017-descriptive-fragmentation.md) |
 | P18 | 正文 relational-role canonical sink（P16-b：父亲→顺顺 类吸收） | ER 算法 / judge | ✅ | Medium | HIGH | [P018](docs/problems/P018-relational-role-canonical-sink.md) |
+| P19 | Ingest 任务不可恢复，中断后重跑重复消耗 LLM token | pipeline 可靠性 / 成本 | 🔍 | High | HIGH | [P019](docs/problems/P019-resumable-analysis.md) |
 
 ---
 
@@ -139,6 +140,13 @@
 - **当前状态**: ✅ **V0.2.6 已实现并验收（mechanism PASS / capability PARTIAL，冻结不修）**——爹爹→顺顺 confirmed（≥2 独立证据实证）；父亲 跨人物裸 role 被拦截不入图、非 Person；翠翠的父亲 qualified 拦截成功；顺顺 aliases 8→3（父亲 退出 sink）；老船夫→祖父 等既有路径零破坏。残留：**P017 D5**（爸爸/母亲 category=None/PERSON 绕过 gate → 独立 Person，Known Limitation）；**翠翠的祖父 未建立**（P06 链路未落盘无法归层）。Follow-up：Task A（P06 lineage 观测）/ Task B（P017 D5 设计），**不改 P16-b**
 - → [P018 完整记录](docs/problems/P018-relational-role-canonical-sink.md) / [V0.2.6 spec](docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md) / [V0.2.6 验收报告](docs/evaluation/2026-08-27-biancheng-v026-eval.md)
 
+### P19 — Ingest 任务不可恢复，中断后重跑重复消耗 LLM token
+
+- **Trigger**: job 中途失败（token quota / 网络 / 进程异常）后重传同一 EPUB 或重启后端——已完成 chunk 无持久化恢复能力，重跑重复消耗全部 token
+- **区分**: 本问题 ≠ P04/P05（那些是失败诱因）；≠ P11（终态语义）；修复目标 = checkpoint / resume / 幂等，**不改任何 ER 语义**
+- **当前状态**: 🔍 **designing（2026-08-28 立项）**——代码审计确认 extraction/judge 中间结果零持久化、JobStore 进程内（D-14）；已确认设计选择（用户拍板）：`POST /api/novels` 不变、EPUB sha256 内容身份、extraction + judge 双层 checkpoint、judge identity = `chunk_id + judge_version + judge_input_fingerprint`、job_id 进程内 / novel_id 复用 / checkpoint 为 durable recovery state、不 supersede D-14、不新增 resume API、前端零改动。核心验收：resume 时 fingerprint 一致且 COMPLETED 的 checkpoint 零 LLM 调用，全量 run vs resume run 结果 canonical 序列化后逐字节一致。**Review Round 1（10 条）+ Round 2（2 条阻断项：COMPLETED 准入收紧 / index 复合键）已全部修订（Spec v1.2）**，进入实现阶段
+- → [P019 完整记录](docs/problems/P019-resumable-analysis.md) / [P19 Design Spec](docs/superpowers/specs/2026-08-28-p019-resumable-analysis-design.md)
+
 ---
 
 ## 4. Resolved Problems（摘要）
@@ -180,6 +188,7 @@
 | [P016-metadata-context-pollution.md](docs/problems/P016-metadata-context-pollution.md) | P16 非正文上下文污染 canonical 首现（✅ PASS） |
 | [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化（PARTIAL，D5 缺口） |
 | [P018-relational-role-canonical-sink.md](docs/problems/P018-relational-role-canonical-sink.md) | P18 正文 relational-role canonical sink（P16-b，✅ mechanism PASS / capability PARTIAL，冻结） |
+| [P019-resumable-analysis.md](docs/problems/P019-resumable-analysis.md) | P19 ingest 不可恢复 → token 浪费（🔍 designing，checkpoint/resume 修复设计） |
 
 **中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md/PROCESS.md 对应规则中。
 

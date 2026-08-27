@@ -53,6 +53,7 @@ API response（characters 查询 / 关系图 / job 状态 / 健康检查）
 | 层 | 模块 | 职责 | 细节 |
 |---|---|---|---|
 | `api/` | novels / characters / jobs / health | HTTP 边界、DTO 转换、ingest 编排、job 状态暴露 | [API_LAYER.md](backend/app/api/API_LAYER.md) |
+| `checkpoint/` | store.py | P19 可恢复分析的 durable checkpoint 文件存储（纯 I/O：manifest / chunks / extraction / judge / merge_judge + 复合索引；无业务决策，兼容判定归 api 层） | [CHECKPOINT_LAYER.md](backend/app/checkpoint/CHECKPOINT_LAYER.md) |
 | `db/` | neo4j.py | Neo4j 访问封装、novel_id 隔离读写、约束、单事务写入、`delete_novel` | [DB_LAYER.md](backend/app/db/DB_LAYER.md) |
 | `models/` | job.py | 进程内任务状态机（JobStore / JobState / JobStatus） | [MODEL_LAYER.md](backend/app/models/MODEL_LAYER.md) |
 | `pipeline/` | epub_reader / sections / chunker / llm_client / extractor / hygiene / resolver / merger / lineage | 抽取、消歧、合并、观测全链路 | [PIPELINE_LAYER.md](backend/app/pipeline/PIPELINE_LAYER.md) |
@@ -65,14 +66,15 @@ API response（characters 查询 / 关系图 / job 状态 / 健康检查）
 
 ```text
 main.py ──组装──▶ api 路由
-api      ──▶ pipeline / db / models / schemas / config
+api      ──▶ pipeline / db / models / schemas / config / checkpoint（P19：durable checkpoint I/O）
 pipeline ──▶ schemas（契约类型）+ config（lineage → config）
 schemas  ──▶ models（仅 schemas/api.py 复用 JobState/JobStatus）
 db       ──▶ neo4j driver（唯一外部依赖）
 models   ──▶ 无（pydantic + threading）
+checkpoint ──▶ 无（stdlib only；版本值由 api 层传入，checkpoint 不判定兼容性）
 ```
 
-- 允许方向：`api → pipeline`、`api → db`、`api → models`、`api → schemas`、`api → config`、`pipeline → schemas`、`pipeline → config`、`schemas → models`。
+- 允许方向：`api → pipeline`、`api → db`、`api → models`、`api → schemas`、`api → config`、`api → checkpoint`、`pipeline → schemas`、`pipeline → config`、`schemas → models`。
 - **不允许反向依赖**：pipeline / db / models 不得 import api；db / models 不得 import pipeline。
 - 注：`characters / jobs / health` 对 `db` 的访问经 `app.state` 注入（运行时依赖，不经 import）；`novels.py` 直接 import db。两者均属 `api → db` 方向。
 - 依赖图为**有向无环**：`sections` 是 pipeline 内唯一无 app 内依赖的模块（循环导入锚点）；新增 import 不得引入环（详见 `backend/app/pipeline/PIPELINE_LAYER.md` §5）。
@@ -83,6 +85,7 @@ models   ──▶ 无（pydantic + threading）
 - **pipeline 层**不得直接访问 Neo4j、不得接触 HTTP；数据经 `db` 层持久化。
 - **db 层**不得做业务决策（canonical 选择、合并判断、role 判定）；只执行按 novel_id 隔离的读写。
 - **models 层**不得依赖 pipeline / LLM / db；不承载业务结果判定。
+- **checkpoint 层**只做 durable checkpoint 文件 I/O（原子写、路径防护、索引维护）；**不得做任何业务决策（含「是否兼容」判定）**——兼容性比较与 COMPLETED 准入归 api 层。
 - **lineage** 是纯旁路 observer：不得参与任何业务判定、不得修改 resolver/extraction 输出、不得改变 merge 行为。
 - 层内具体「owns / does NOT own」见各 `*_LAYER.md`；违规修改先读 `AGENTS.md` §2 与对应 Layer 文档。
 

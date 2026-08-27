@@ -63,3 +63,18 @@ class JobStore:
             job = self._jobs.get(job_id)
             if job is not None:
                 job.done_chunks += 1
+
+    def get_or_create_running_job(self, novel_id: str, candidate_job_id: str) -> tuple[str, bool]:
+        """P19 AC-8：单锁临界区内按 novel_id 查非终态 job → 命中返回既有 (job_id, False)；
+        否则创建 candidate 并返回 (candidate_job_id, True)。
+
+        闭合「查 + 建」的 TOCTOU 竞态：同 novel 并发上传最多产生一个非终态 job。
+        """
+        terminal = (JobStatus.completed, JobStatus.completed_with_errors, JobStatus.failed)
+        with self._lock:
+            for job in self._jobs.values():
+                if job.novel_id == novel_id and job.status not in terminal:
+                    return job.job_id, False
+            job = JobState(job_id=candidate_job_id, novel_id=novel_id)
+            self._jobs[candidate_job_id] = job
+            return candidate_job_id, True

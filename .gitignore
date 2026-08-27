@@ -16,3 +16,4 @@ pytest-cache-files*/
 .npm-cache/
 books
 .idea/
+checkpoints/

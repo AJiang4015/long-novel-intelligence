@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     er_lineage_raw_extraction: bool = False    # env ER_LINEAGE_RAW_EXTRACTION：原始 extraction 三元组 dump
                                                # （debug 能力，默认 off；深挖 extraction 时显式开启）
 
+    # ---- P19：resumable analysis checkpoint（默认开；False = 完全回退现状，不写不查）----
+    er_checkpoint_dir: str = "checkpoints"     # env ER_CHECKPOINT_DIR：checkpoint 根目录（相对 backend cwd）
+    er_checkpoint_enabled: bool = True         # env ER_CHECKPOINT_ENABLED：checkpoint/resume 总开关
+
 
 @lru_cache
 def get_settings() -> Settings:

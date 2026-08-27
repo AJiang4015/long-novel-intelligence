@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from app.pipeline.epub_reader import Chapter
 from app.pipeline.sections import SectionType
 
+# P19：切块逻辑版本（chunk 边界语义变更时 +1；进入 checkpoint config_fingerprint）
+CHUNKER_VERSION = "1"
+
 
 @dataclass
 class Chunk:
