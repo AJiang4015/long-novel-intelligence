@@ -36,7 +36,7 @@ chunker（按 CHUNK_SIZE / CHUNK_OVERLAP 切块）
  ↓
 extractor（并发 LLM 抽取：characters + relationships；concurrency 来自配置）
  ↓
-hygiene（deterministic hard filter：COLLECTIVE / INVALID 直滤）
+hygiene（deterministic hard filter：COLLECTIVE / INVALID 直滤 + GENERIC 精确词表）
  ↓
 resolver（EntityResolver：recall → judge → admission → registration；
          role gate / provisional / deferred / unresolved；整本一个实例）
@@ -61,17 +61,21 @@ API response（characters 查询 / 关系图 / job 状态 / 健康检查）
 
 ## 3. 依赖方向（代码事实）
 
+> 记号：`A → B` 表示 A 依赖（import）B（与各 `*_LAYER.md` 统一）。
+
 ```text
 main.py ──组装──▶ api 路由
 api      ──▶ pipeline / db / models / schemas / config
-pipeline ──▶ schemas（契约类型）
+pipeline ──▶ schemas（契约类型）+ config（lineage → config）
 schemas  ──▶ models（仅 schemas/api.py 复用 JobState/JobStatus）
 db       ──▶ neo4j driver（唯一外部依赖）
 models   ──▶ 无（pydantic + threading）
 ```
 
-- 允许方向：`api → pipeline`、`api → db`、`api → models`、`api → schemas`、`api → config`、`pipeline → schemas`、`schemas → models`。
+- 允许方向：`api → pipeline`、`api → db`、`api → models`、`api → schemas`、`api → config`、`pipeline → schemas`、`pipeline → config`、`schemas → models`。
 - **不允许反向依赖**：pipeline / db / models 不得 import api；db / models 不得 import pipeline。
+- 注：`characters / jobs / health` 对 `db` 的访问经 `app.state` 注入（运行时依赖，不经 import）；`novels.py` 直接 import db。两者均属 `api → db` 方向。
+- 依赖图为**有向无环**：`sections` 是 pipeline 内唯一无 app 内依赖的模块（循环导入锚点）；新增 import 不得引入环（详见 `backend/app/pipeline/PIPELINE_LAYER.md` §5）。
 
 ## 4. 边界规则（禁止跨层实现）
 

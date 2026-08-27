@@ -23,6 +23,8 @@
 
 ## 2. 自动化测试
 
+> 纯文档变更（不涉及代码 / 测试 / prompt / 配置 / 数据）可跳过测试执行，见 `AGENTS.md` §5 docs-only 例外。
+
 ### Unit（`cd backend && python -m pytest`）
 
 - **Mock LLM**：`llm_client` 通过注入 `http_client`（`FakeHttpClient`）模拟响应；`resolver` 通过注入 `judge` 可调用对象
@@ -51,6 +53,7 @@
 - 不在已有 Novel 上增量测试
 - 记录（见 §6 Environment Baseline）
 - 记录结果（见 §9 Reporting）
+- **非确定性声明**：真实 LLM 输出（judge 判定、提取结果）存在非确定性（P06）——单次运行结果不代表结论；结论需多次运行取趋势，报告注明运行次数与波动（规则见 `AGENTS.md` §3，流程见 `PROCESS.md` §2）
 
 ## 4. Evaluation Baseline（《边城》）
 

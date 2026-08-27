@@ -35,20 +35,13 @@ Commit
 
 每个环节必须完成后才进入下一步；**不允许跳级**（尤其：不能没有 Evidence 就归因，不能没有 Review 就实现，不能没有 Real evaluation 就下结论）。
 
+**闭环**：Evaluation report 回写 Problem Record（补充 Evidence，不覆盖历史事实），可能触发新一轮 Problem 立项——流程是循环而非一次性的。
+
 ## 1. 问题处理流程（Problem → Evidence → 归因）
 
 1. **Problem**：记录症状与影响（`PROBLEM.md` 问题地图；完整记录入 `docs/problems/PXXX-*.md`）。
 2. **Evidence**：先查 `PROBLEM.md` §1 Diagnostic Routing 定位 First Check，再读对应 Problem Record 的 Investigation Path 与 Failed Approaches；复现问题、收集证据（数据库查询 / 文本定位 / 代码路径 / lineage）。**不要凭经验直接修改代码。**
-3. **Problem classification / layer attribution**：区分 症状 / 直接原因 / 根因；把问题归到**真正拥有该决策的层**，不是「哪里方便改就改哪里」：
-
-```text
-extraction coverage failure   → extractor 层    （P017 D5-a）
-≠ recall failure              → resolver recall（P08）
-≠ judge failure               → resolver judge （P06）
-≠ admission failure           → resolver role  （P16-b / P18）
-≠ registration failure        → resolver 注册   （P17 D2）
-≠ merge failure               → merger         （merge INCONCLUSIVE）
-```
+3. **Problem classification / layer attribution**：区分 症状 / 直接原因 / 根因；把问题归到**真正拥有该决策的层**，不是「哪里方便改就改哪里」。六类归因链（extraction coverage ≠ recall ≠ judge ≠ admission ≠ registration ≠ merge）与各层问题映射见 `backend/app/pipeline/PIPELINE_LAYER.md` §4。
 
    归因手段：lineage 观测（`ER_LINEAGE=1` + `backend/tools/diagnose_lineage.py` 离线归层）优先；无观测时先补观测再归因（D-11：Task A 先于 Task B）。
 4. **Spec**：基于归因写设计（`docs/superpowers/specs/`），明确改哪一层、不动哪一层、验证方法。
@@ -79,7 +72,7 @@ extraction coverage failure   → extractor 层    （P017 D5-a）
 3. 先说明准备修改的范围；保持 API 和 DTO 向后兼容；优先复用现有组件。
 
 **修改后**：
-1. 运行相关测试（unit → integration，见 `TESTING.md`）；
+1. 运行相关测试（unit → integration，见 `TESTING.md`；纯文档变更可跳过，见 `AGENTS.md` §5 docs-only 例外）；
 2. 运行 build / type check；
 3. `git diff` 检查；确认没有修改任务范围之外的文件；
 4. 按以下报告模板交付：
@@ -106,7 +99,7 @@ extraction coverage failure   → extractor 层    （P017 D5-a）
 
 - **归因失败**：多轮尝试无新证据时回到 Evidence（补观测 / 重放 / 检查输入），**停止继续无依据修改**。
 - **复发处理**：已 resolved 问题再次出现同样症状，先检查：code regression / environment change / model change / input change（对应记录「Do Not Reopen」），**不得盲目重复旧修复**。
-- **判定类失败**：LLM 判定非确定性（judge / extraction）不能当 deterministic 结论；评估多次取趋势，单次结果不写死进测试。
+- **判定类失败**：LLM 判定非确定性（judge / extraction）不能当 deterministic 结论；评估多次取趋势、单次结果不写死进测试（实验规范见 §2「LLM 非确定性」）。
 
 ## 7. 固化优先级原则
 

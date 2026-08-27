@@ -107,12 +107,12 @@
 
 ## D-10 — 不引入 classifier 绕过 P017 D5
 
-- **Status**: Accepted
-- **Date**: 2026-08-27（记录；约束形成于 V0.2.5-b，2026-08-26；Task B 评审延续，2026-08-27）
-- **Context**: D5 是一组「extraction classification 覆盖缺口」的 Known Limitation，含三个层面：**D5 原义**——category=None → legacy PERSON fallback，使长辈称谓（爸爸/母亲）绕过 B1 与 role gate（P017/P018 实证）；**D5-a**——extraction mention coverage 缺失（爸爸/妈妈/大儿子/翠翠的祖父 等未提取，根本不进入 pipeline）；**D5-b**——LLM generic 标签在 judge-null 路径未生效（母亲 generic + judge null → 仍注册 canonical）。三者均不改变「不引入 classifier」的约束。
-- **Decision**: **不擅自补分类器绕过 D5**；D5 是已记录 Known Limitation，走 P06 follow-up / Task B 独立设计（`docs/superpowers/specs/2026-08-27-p017-d5-category-coverage-design.md`），只评审不实现。
+- **Status**: Accepted（约束有效；Task B 已按约束执行）
+- **Date**: 2026-08-27（记录；约束形成于 V0.2.5-b，2026-08-26；Task B 执行于 V0.2.8）
+- **Context**: D5 是一组「extraction classification 覆盖缺口」，含三个层面：**D5 原义**——category=None → legacy PERSON fallback，使长辈称谓（爸爸/母亲）绕过 B1 与 role gate（P017/P018 实证）；**D5-a**——extraction mention coverage 缺失（爸爸/妈妈/大儿子/翠翠的祖父 等未提取，根本不进入 pipeline）；**D5-b**——LLM generic 标签在 judge-null 路径未生效（母亲 generic + judge null → 仍注册 canonical）。三者均不改变「不引入 classifier」的约束。
+- **Decision**: **不擅自补分类器绕过 D5**；D5 修复必须走 归因 → Spec → Review（Task B），且手段不得是引入学习型分类器——允许路径：结构规则对齐 / prompt 增强 / 接受为 Known Limitation。
 - **Reason**: 补分类器扩大范围、改变 LLM 契约（MentionCategory 语义）、与「先归因后修改」纪律冲突（D-11）。
-- **Consequence**: 爸爸 碎片化为独立 Person、母亲 等未收敛均属预期 Known Limitation；新方案必须先有 Problem Record + Spec + Review（PROCESS.md §5）。
+- **Consequence**: 执行结果——**D5-b 已按约束以结构规则修复（B-1，V0.2.8，见 D-17）**；**D5-a prompt A/B 已执行，B 未采纳**（extraction coverage 缺失归模型域 P06 提取方差，见 `docs/evaluation/2026-08-27-biancheng-d5a-prompt-ab.md`）；D5 原义（category=None → PERSON fallback）仍为 Known Limitation。任何后续新方案必须先有 Problem Record + Spec + Review（PROCESS.md §5）。
 
 ## D-11 — Task A 先于 Task B
 
@@ -143,7 +143,7 @@
   - merger 负责跨 chunk 聚合 + merge 决策（b1，纯内存，不改写 resolver 状态）+ 应用（b2，merge_map 交 db 单事务执行）；
   - merger **不得**对抽取结果做语义再解释。
 - **Reason**: 决策与应用分离、层间契约清晰，保证可测试性与事务原子性。
-- **Consequence**: 归因链固化（extraction coverage ≠ recall ≠ judge ≠ admission ≠ registration ≠ merge，见 PIPELINE_LAYER.md）；修改任一层的决策语义需先读对应 Layer 文档。
+- **Consequence**: 归因链固化（extraction coverage ≠ recall ≠ judge ≠ admission ≠ registration ≠ merge，见 `backend/app/pipeline/PIPELINE_LAYER.md` §4）；修改任一层的决策语义需先读对应 Layer 文档。
 
 ## D-14 — 进程内 JobStore，不引入 Redis
 
@@ -172,14 +172,14 @@
 - **Reason**: 确定性优先（不引入 LLM 分类依赖）；默认 BODY 避免误伤正文。
 - **Consequence**: 非正文 canonical 门控（provisional/promotion/flush）依赖该分类；换语料时复核词表。
 
-## D-17 — P017 B1：chunk 内 deferred 重召回
+## D-17 — P017 D5-b / B-1：LLM generic + judge null 不再进入 canonical fallback（V0.2.8）
 
-- **Status**: Accepted
-- **Date**: 2026-08-27（记录；形成于 V0.2.5-b，2026-08-26）
-- **Context**: DESCRIPTIVE/COMPOSITE 无候选时在 chunk 处理中途立即注册 canonical，先处理者绕过 judge 锁成 canonical（P017 一族碎片；P08/P10 顺序竞态在注册层的复发）。
-- **Decision**: B1 chunk 内 deferred——DESCRIPTIVE/COMPOSITE 无候选 → 不进 known/_index，收集到 chunk 级 deferred；chunk 末本 chunk 新 canonical 入 _index 后对 deferred 重跑 recall；重召回候选与处理期 pending 合并为**同一次 batch judge**（零额外 LLM 请求）。仍无法确认的走 D-9（unresolved 不注册）。
-- **Reason**: 消除「先处理者绕过 judge」的顺序竞态；batch judge 使 LLM 成本不变（每 chunk 至多一次 judge，judge 契约零变化）。
-- **Consequence**: 跨 chunk deferred（B2）未实现，留待后续独立立项；D5（category=None → PERSON fallback，D-10）使部分称谓绕过 B1，为 Known Limitation（真实评估实证：ch5b 一族 category 非 DESCRIPTIVE 直接注册）。
+- **Status**: Accepted（已实现并验证）
+- **Date**: 2026-08-27（记录；实现于 V0.2.8，commit `a9a38f9`；D5-a A/B 报告 commit `cd52844`）
+- **Context**: D5-b 缺口——LLM 标注 category=GENERIC 且 judge 返回 null 的 mention，经 legacy PERSON fallback 仍注册 canonical（母亲 generic + judge null → 独立 Person mc=7 实证）；null / missing / exception 三路径行为不一致。B-1 构建在 V0.2.5-b 的 B1 chunk 内 deferred 机制之上（B1 机制见 P017 §13 与 `docs/superpowers/specs/2026-08-26-v025b-descriptive-policy-design.md`）。
+- **Decision**: `_is_effective_generic` 与 `_resolve_name` 对齐 + `_chunk_dropped` 防泄漏：LLM category=GENERIC + judge null 不再进入 canonical fallback；null / missing / exception 三路径统一为 dropped。未改 P16-b gate / generic 词表 / prompt（纯结构规则对齐，**非 classifier**，符合 D-10）。
+- **Reason**: 消除「generic 标签在 judge-null 路径失效 → 碎片注册」；修复手段限制在结构规则，遵守 D-10 约束（不引入 classifier 绕过 D5）。
+- **Consequence**: 真实《边城》重跑：16 个 LLM generic mention 由 null_registered 碎片改为 dropped；母亲 无独立 Person（judge 判 女孩子的母亲 → alias）。**D5-a（extraction coverage，prompt A/B）独立实验**：B prompt 未被采纳（保持 A=当前 prompt），覆盖增益有限且伴随 descriptive 化风险——coverage 缺失更可能属模型域（P06 提取方差），见 `docs/evaluation/2026-08-27-biancheng-d5a-prompt-ab.md`。
 
 ---
 
@@ -203,4 +203,4 @@
 | D-14 | 进程内 JobStore | Accepted |
 | D-15 | hygiene 只做 hard filter | Accepted |
 | D-16 | section 分类为项目级启发式 | Accepted |
-| D-17 | P017 B1：chunk 内 deferred 重召回 | Accepted |
+| D-17 | P017 D5-b / B-1：generic + judge null 不进 canonical fallback（V0.2.8） | Accepted |

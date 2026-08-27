@@ -23,7 +23,7 @@
 ## 4. Decision ownership
 
 - job 状态机合法转换规则（pending → running → completed / completed_with_errors / failed）
-- P11 规则：**全部 chunk 失败 → job 状态应为 failed**（而非 completed_with_errors）
+- P11（全部 chunk 失败 → failed）：该规则**尚未实现**（`../../../PROBLEM.md` P11，代码变更未授权）；若立项实现，状态机规则归属本层
 - 失败块记录语义（FailedBlock 列表）
 
 ## 5. Allowed dependencies

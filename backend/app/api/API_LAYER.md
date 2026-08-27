@@ -52,7 +52,7 @@ HTTP 边界与 ingest 编排：
 ## 8. Failure ownership
 
 - 端点级异常 → HTTPException（404/400/503）
-- ingest 内部失败（LLM 失败块 / 解析失败）→ job `failed_blocks` + 状态；「全 chunk 失败 → job failed」规则见 `MODEL_LAYER.md`（P11）
+- ingest 内部失败（LLM 失败块 / 解析失败）→ job `failed_blocks` + 状态；P11（全 chunk 失败 → failed）**尚未实现**（见 `../../../PROBLEM.md` P11），状态机规则若立项归 `models` 层（`../models/MODEL_LAYER.md` §4）
 - 请求级失败不污染业务数据（数据库操作全程走 `db` 层隔离）
 
 ## 9. Testing expectations

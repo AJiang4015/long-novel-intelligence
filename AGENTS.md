@@ -44,7 +44,7 @@
 * 遇到症状先走 `PROBLEM.md` §1 Diagnostic Routing，读对应 `docs/problems/PXXX-*.md` 的 Investigation Path 与 Failed Approaches，**不要凭经验直接修改代码**
 * 解决非 trivial 问题后必须更新对应 Problem Record（PROBLEM.md 摘要 + docs/problems 详细记录）
 * 不覆盖历史事实：只增改，不删除/改写已确认的根因、方案、commit、被证伪假设
-* 不把单次真实 LLM evaluation 当 deterministic fact
+* 不把单次真实 LLM evaluation 当 deterministic fact（Evidence Level 区分见 `PROBLEM.md` §6 Rule 8）
 * 已 resolved 问题再次出现同样症状，先检查 code regression / environment change / model change / input change（见各记录「Do Not Reopen」），**不得盲目重复旧修复**
 
 ---
@@ -77,7 +77,7 @@
 ### 决策红线（详见 `DECISIONS.md`）
 
 * **不把「父亲/母亲/祖父」加入 generic 词表**（D-7：P16/P18 是 context / relational-role 问题，正文真实人物；RC3 已锁）
-* **不引入 classifier 绕过 P017 D5**（D-10：category=None → legacy PERSON fallback 是已记录 Known Limitation，走 P06 follow-up）
+* **不引入 classifier 绕过 P017 D5**（D-10：D5 缺口——原义 category=None→PERSON fallback 与 D5-a extraction 覆盖缺失为 Known Limitation；D5-b 已由 B-1 结构规则修复（V0.2.8，D-17）；任何绕过仍禁止，走 P06 follow-up）
 * **不因「顺顺→父亲 正文内吸收仍存在」判 P16-a/P17 失败**（P18 独立问题；角色称谓吸收语义可能正确，先做 aliases 可解释性核对）
 * **不把「DESCRIPTIVE/COMPOSITE 无法确认 → unresolved 不注册」当回归**（D-9：P017 D2 有意取代 P009「不静默丢人物」兜底；`test_hygiene.py:176` 已修订）
 * **lineage 只允许作为旁路 observer**（D-8：不参与判定、不改写任何输出）

@@ -129,7 +129,8 @@
 
 - **Trigger**: DESCRIPTIVE/COMPOSITE 无候选直接建 canonical（大儿子/长子/次子 与 天保/傩送 分裂）；chunk 内首现顺序敏感
 - **当前状态**: V0.2.5-b 已实现并验证 **PARTIAL**（B1 机制生效：unresolved 10 次；ch5b 一族未收敛系 **D5 category 缺口**——category=None/PERSON 绕过 B1）；B2（跨 chunk deferred）后续
-- **D5 域 v2 重划（Task A 真实验证后）**: D5 = 原义（category=None→PERSON fallback，设计性 Known Limitation，本轮无直接案例）+ **D5-a**（extraction mention coverage 缺失：爸爸/妈妈/娘/大儿子/长子/次子/哥哥/翠翠的祖父 未提取）+ **D5-b**（LLM generic 标签在 judge-null 路径未生效：母亲 generic+judge null→仍注册 canonical mc=7）。方案与影响面见 [Task B v2 spec](docs/superpowers/specs/2026-08-27-p017-d5-category-coverage-design.md)（只评审不实现）
+- **D5 域 v2 重划（Task A 真实验证后）**: D5 = 原义（category=None→PERSON fallback，设计性 Known Limitation，本轮无直接案例）+ **D5-a**（extraction mention coverage 缺失：爸爸/妈妈/娘/大儿子/长子/次子/哥哥/翠翠的祖父 未提取）+ **D5-b**（LLM generic 标签在 judge-null 路径未生效：母亲 generic+judge null→仍注册 canonical mc=7）。方案与影响面见 [Task B v2 spec](docs/superpowers/specs/2026-08-27-p017-d5-category-coverage-design.md)。
+- **Task B 执行状态（V0.2.8，增补）**: ✅ **D5-b 已实现**（B-1：generic+judge null 不再进入 canonical fallback，`a9a38f9`；重跑 16 个 generic mention 碎片→dropped，母亲 无独立 Person）；⏳ **D5-a prompt A/B 已评估**（B 未采纳，保持 A=当前 prompt；覆盖增益有限 + descriptive 化风险，归模型域 P06 提取方差，`cd52844` / [报告](docs/evaluation/2026-08-27-biancheng-d5a-prompt-ab.md)）；D5 原义（category=None→PERSON fallback）仍为 Known Limitation
 - → [P017 完整记录](docs/problems/P017-descriptive-fragmentation.md) / [V0.2.5-b spec](docs/superpowers/specs/2026-08-26-v025b-descriptive-policy-design.md)
 
 ### P18 — 正文 relational-role canonical sink（P16-b）
@@ -188,6 +189,7 @@
 - `2026-08-26-biancheng-v025-eval.md`（V0.2.5-a/b 真实评估验收与归因：P16-a PASS、P17 PARTIAL/D5 缺口、P16-b 首次干净观察、merge 继续 INCONCLUSIVE）
 - `2026-08-27-biancheng-v026-eval.md`（V0.2.6 P16-b 真实评估验收：爹爹 confirmed / 父亲 拦截 / 翠翠的父亲 拦截 / 顺顺 sink 收敛；爸爸 D5 缺口；翠翠的祖父 归 P06 观测缺口；merge INCONCLUSIVE）
 - `2026-08-27-biancheng-task-a-lineage-eval.md`（V0.2.7 Task A lineage 验收：四案例归层——翠翠的祖父=EXTRACTION_LAYER / 岳云二老·弟弟·爷爷=SUCCESS；Task B 决策输入：extraction 覆盖缺失 + LLM category null 路径不一致）
+- `2026-08-27-biancheng-d5a-prompt-ab.md`（V0.2.8 Task B D5-a prompt A/B：B 未采纳，保持 A=当前 prompt——extraction coverage 缺失归模型域 P06 提取方差，prompt 增强边际收益有限）
 
 ---
 

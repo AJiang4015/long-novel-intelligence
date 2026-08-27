@@ -89,6 +89,19 @@ Lineage（lineage.py）
     （默认关闭 ER_LINEAGE=0，no-op 零开销；D-8）
 ```
 
+### 归因链（六类失败 → 层 → 问题）
+
+> 固化：先归到**拥有该决策的层**，不是「哪里方便改就改哪里」。本链是六类失败归因的唯一权威映射（AGENTS/PROCESS/DECISIONS/PROBLEM 均引用此处）。
+
+```text
+extraction coverage failure（抽取覆盖缺失）   → extractor 层    → P017 D5-a
+≠ recall failure（候选召回）                 → resolver recall → P08
+≠ judge failure（判定非确定性/误判）          → resolver judge  → P06
+≠ admission failure（准入拦截误判）           → resolver role  → P16-b / P18
+≠ registration failure（注册/alias 策略）     → resolver 注册   → P17 D2
+≠ merge failure（跨 chunk 合并）              → merger         → merge INCONCLUSIVE
+```
+
 ## 5. Allowed dependencies
 
 > 记号：`A → B` 表示 A 依赖（import）B。以下为代码事实（2026-08-27 快照）。
