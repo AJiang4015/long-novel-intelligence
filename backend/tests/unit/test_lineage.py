@@ -370,6 +370,22 @@ def test_diagnose_not_extracted(ws_tmp):
     assert verdict == "EXTRACTION_LAYER"
 
 
+def test_diagnose_expect_variant_alias_success(ws_tmp):
+    """期望 二老，实际 alias 傩送 且 canonical_snapshot 中 二老 ∈ 傩送.aliases → SUCCESS（变体）。"""
+    events = _base_events(mention="弟弟", category=None, hygiene="generic",
+                          candidates=("傩送",), role=("bare", False, None, False, None),
+                          resolves_to="傩送", admission="accept", reason=None,
+                          registered=True, alias_to="傩送", final="傩送")
+    events.append({"event": "canonical_snapshot", "canonicals": [
+        {"canonical": "傩送", "aliases": ["二老", "傩送二老", "弟弟"],
+         "mention_count": 15, "chapters": [5, 6]},
+    ]})
+    p = write_jsonl(ws_tmp, events)
+    verdict, _, notes = diagnose_mention(load_events(p), "弟弟", expect="二老")
+    assert verdict == "SUCCESS"
+    assert any("别名变体" in n for n in notes)
+
+
 def test_diagnose_failed_chunk_chain_break(ws_tmp):
     """mention 无事件 + job 有失败块 → 链路断点（失败 chunk / 未提取并存）。"""
     p = write_jsonl(ws_tmp, [

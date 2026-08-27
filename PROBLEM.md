@@ -96,7 +96,7 @@
 - **Trigger**: 同样 judge 输入不同结果；两次 ingest 不一致；人物节点出现泛指词
 - **区分**: 非确定性(P06) vs 限流(P05) vs 欠费(P04) vs 候选召回(P08) vs mention hygiene(P09)——先看 `[llm]` 日志 code
 - **当前状态**: judge 为唯一合并决策点；测试 mock；评估多次取趋势；**不把所有 ER 失败归因于 P06**
-- **Task A（V0.2.7）**: lineage 观测已上线（`ER_LINEAGE=1`，默认关零开销）——extraction/recall/judge/admission/registration 全层事件经 `lineage_id` 关联，`tools/diagnose_lineage.py` 离线归层（翠翠的祖父/岳云二老/弟弟/爷爷）。见 [Task A spec](docs/superpowers/specs/2026-08-27-p06-lineage-observability-design.md)
+- **Task A（V0.2.7）**: lineage 观测已上线（`ER_LINEAGE=1`，默认关零开销）——extraction/recall/judge/admission/registration 全层事件经 `lineage_id` 关联，`tools/diagnose_lineage.py` 离线归层。**真实《边城》验收（2026-08-27，qwen3.7-flash）**：翠翠的祖父 = EXTRACTION_LAYER（LLM 未提取，终结 V0.2.6 (a)/(b) 未决）；岳云二老/弟弟/爷爷 本轮 SUCCESS（前两层标注正确 + judge 正确）。**Task B 决策输入**：四案例零个落在 category missing/wrong；新事实 = extraction 覆盖缺失（爸爸/大儿子一族未提取）+ LLM generic 标签在 judge-null 路径未生效（母亲仍碎片化）。见 [Task A spec](docs/superpowers/specs/2026-08-27-p06-lineage-observability-design.md) / [验收报告](docs/evaluation/2026-08-27-biancheng-task-a-lineage-eval.md)
 - → [P006 完整记录](docs/problems/P006-judge-nondeterminism.md)
 
 ### P08 — Entity Resolution：zero-overlap 分裂与 canonical 合并质量
@@ -184,3 +184,4 @@
 - `2026-08-21-biancheng-er-stability.md`（稳定性评估，P06 证据源）
 - `2026-08-26-biancheng-v025-eval.md`（V0.2.5-a/b 真实评估验收与归因：P16-a PASS、P17 PARTIAL/D5 缺口、P16-b 首次干净观察、merge 继续 INCONCLUSIVE）
 - `2026-08-27-biancheng-v026-eval.md`（V0.2.6 P16-b 真实评估验收：爹爹 confirmed / 父亲 拦截 / 翠翠的父亲 拦截 / 顺顺 sink 收敛；爸爸 D5 缺口；翠翠的祖父 归 P06 观测缺口；merge INCONCLUSIVE）
+- `2026-08-27-biancheng-task-a-lineage-eval.md`（V0.2.7 Task A lineage 验收：四案例归层——翠翠的祖父=EXTRACTION_LAYER / 岳云二老·弟弟·爷爷=SUCCESS；Task B 决策输入：extraction 覆盖缺失 + LLM category null 路径不一致）

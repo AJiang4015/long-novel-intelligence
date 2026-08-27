@@ -72,6 +72,40 @@ def _merge_drops(events: list[dict]) -> dict[str, str]:
     return {e.get("canonical"): e.get("merge_keep") for e in events if e.get("event") == "merge_drop"}
 
 
+def _canonical_snapshot(events: list[dict]) -> dict[str, dict]:
+    """canonical_snapshot → {canonical: record}（job 末图内最终状态；取最后一个事件）。"""
+    out: dict[str, dict] = {}
+    for e in events:
+        if e.get("event") == "canonical_snapshot":
+            out = {c.get("canonical"): c for c in e.get("canonicals", [])}
+    return out
+
+
+def _expect_satisfied(mention: str, expect: str, actual_alias: str | None,
+                      actual_canonical: str | None, events: list[dict]) -> tuple[bool, str | None]:
+    """期望是否满足：alias/canonical 直等于期望，或期望是该 canonical 的别名变体。
+
+    例：期望 二老，实际 alias=傩送 且 二老 ∈ 傩送.aliases（canonical_snapshot）→ 满足。
+    返回 (satisfied, 证据说明)。
+    """
+    if actual_alias == expect:
+        return True, f"{mention} → {expect}"
+    if actual_canonical == expect:
+        return True, f"{mention} → {expect}"
+    snap = _canonical_snapshot(events)
+    holder = None
+    if actual_alias and actual_alias in snap:
+        holder = snap[actual_alias]
+    elif actual_canonical and actual_canonical in snap:
+        holder = snap[actual_canonical]
+    if holder and expect in (holder.get("aliases") or []):
+        target = actual_alias or actual_canonical
+        return True, f"{mention} → {target}（{expect} 为该 canonical 的别名变体）"
+    if actual_alias and actual_alias in snap and expect in snap:
+        return False, None
+    return False, None
+
+
 def _effective_category(enter: dict) -> str | None:
     """hygiene 强制类别优先（generic/collective/invalid），否则用 LLM category。"""
     hy = enter.get("hygiene_category")
@@ -194,8 +228,9 @@ def diagnose_mention(events: list[dict], mention: str,
 
     if expect:
         expected = expect
-        if actual_alias == expected or actual_canonical == expected:
-            return "SUCCESS", chain, notes + [f"期望满足：{mention} → {expected}"]
+        satisfied, how = _expect_satisfied(mention, expected, actual_alias, actual_canonical, events)
+        if satisfied:
+            return "SUCCESS", chain, notes + [f"期望满足：{how}"]
         verdict, n = _fixed_order_verdict(f"期望 alias → {expected}")
         if verdict:
             return verdict, chain, notes + n
