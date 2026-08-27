@@ -238,6 +238,22 @@ MATCH (n:Novel) DELETE n
 
 不得把一次真实 Evaluation 当成 deterministic unit test。
 
+**评估报告声明（V0.2.5 起强制）**：报告标题与顶部必须注明「本报告是 XX 版本的验证记录，不是下一轮修复方案；任何后续代码修改需另立设计 / Problem Record」。防止「P17 = PARTIAL」等结论被直接当成改代码指令。
+
+**V0.2.5 验收指标（真实评估必须采集）**：
+
+* 非正文 canonical 数量（期望 0）
+* provisional → promoted / provisional → dropped 计数
+* DESCRIPTIVE resolved / unresolved / canonical 数量
+* ch5b 一族（大儿子/长子/次子/第二个儿子/天保/傩送）canonical 收敛情况
+* P18 观察：正文角色称谓吸收（顺顺 aliases 含 父亲/爸爸/爹爹 类）——正吸收 vs 跨人物错吸
+
+**归因纪律（V0.2.5 起）**：
+
+* `顺顺→父亲` 类正文吸收仍存在 ≠ P16-a/P17 失败（P18 独立问题，角色称谓吸收语义可能正确）
+* ch5b 一族未收敛 ≠ B1 机制失败——先查 extraction category（D5 缺口：category=None → PERSON fallback）再查 judge（P06）
+* merge 整体 failed_pairs ≠ 算法失败——batch merge judge 一次异常即全记 failed（INCONCLUSIVE）
+
 ---
 
 # 10. Problem Knowledge Base
@@ -371,9 +387,11 @@ git diff
 * `EntityResolver` 一次 ingest 一个实例（`known`/mention index 整本持续）
 * 长任务脚本用 `python -u`（无缓冲）+ 后台任务方式运行
 * 真实 LLM 评估前记录 Environment Baseline（commit/model/chunk/concurrency/novel_id/Neo4j 版本）
-* 修改 `resolver.py` 后跑 `test_resolver.py` 回归清单（TESTING.md §8）
+* 修改 `resolver.py` 后跑 `test_resolver*.py` / `test_hygiene.py` / `test_sections.py` 全量回归（含 V0.2.5 T-a/T-b 矩阵）
+* 修改 ER 相关代码后跑全量 unit + integration（V0.2.5 基线：unit 188 / integration 15）
 * LLM 调用报错时先看诊断日志 `[llm] stage=... status=... code=...`（区分 Arrearage/限流/validation）
 * 改 `.env` 后必须重启后端（settings 进程内缓存）
+* 真实评估报告附 V0.2.5 验收指标（非正文 canonical、provisional promoted/dropped、DESCRIPTIVE resolved/unresolved、ch5b 一族收敛、P18 sink 观察）
 
 ## Don't
 
@@ -384,3 +402,7 @@ git diff
 * 不把一次真实 LLM 评估当成 deterministic 测试
 * 不为「代码更漂亮」改动已稳定的 API / DTO / 行为
 * 不把 LLM 的非确定性（judge 判定、提取输出）当成确定性结果写死进测试
+* **不把「父亲/母亲/祖父」加入 generic 词表**（P16/P18 是 context / relational-role 问题，正文真实人物；RC3 已锁）
+* **不因「顺顺→父亲 正文内吸收仍存在」判 P16-a/P17 失败**（P18 独立问题；角色称谓吸收语义可能正确，先做 aliases 可解释性核对）
+* **不引入 classifier 绕过 P017 D5**（category=None → legacy PERSON fallback 是已记录 Known Limitation，走 P06 follow-up，不擅自补分类器）
+* **不把「DESCRIPTIVE/COMPOSITE 无法确认 → unresolved 不注册」当回归**（P017 D2 有意取代 P009「不静默丢人物」兜底；`test_hygiene.py:176` 已修订）

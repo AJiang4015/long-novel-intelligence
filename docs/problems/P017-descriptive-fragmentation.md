@@ -1,16 +1,16 @@
 # P017 — DESCRIPTIVE First-Seen Canonical Fragmentation：描述性称谓无候选直接建 canonical
 
-- **Status**: 🔍 investigating（V0.2.5-b 设计已锁定，未实现）
+- **Status**: 🔍 investigating（V0.2.5-b 已实现并验证 **PARTIAL**：B1 机制生效（unresolved 10 次），ch5b 一族未收敛系 D5 category 缺口；B2 后续）
 - **Severity**: High（一族 6 碎片；45/61 节点 mc=1 单章）
 - **Domain**: ER 算法 / canonical 注册策略
 - **Tags**: er, descriptive, canonical-registration, first-seen, order-sensitivity, fragmentation
 - **First Seen**: V0.2.4 真实《边城》评估（job `634f7f96`，novel `5c311fb3`）
-- **Last Verified**: 2026-08-26（只读复核：ch5b 偏移、Neo4j 碎片清单）
+- **Last Verified**: 2026-08-26 真实评估（job `1b7b7c1b`，novel `0ef3bd31`）
 - **Evidence Level**: HIGH（ch5b 同 chunk 共现 + 碎片清单为确定性事实）；MEDIUM（judge 反序下是否合并依赖模型）
 - **Decision Type**: EXPERIMENT_RESULT（真实评估观察）+ DESIGN_DECISION（V0.2.5-b：unresolved 不注册）
 - **Related Problems**: P08（first-seen locking 机制）；P10（顺序敏感家族）；P06（judge 判定方差）；P16（共用注册缝，策略独立）；P09（trade-off 被 D2 有意取代）
-- **Related Commits**: 无（V0.2.5-b 未实现）；前置冻结 RC2 `0febdc1` / RC3 `83db5f7`/`9f3b85f`
-- **Related Evaluation Reports**: job `634f7f96` / novel `5c311fb3`（无独立报告文件；证据见本记录 §8/§9）
+- **Related Commits**: V0.2.5-b 实现 `c357e5f`（feat）/`27c8a2c`（test）
+- **Related Evaluation Reports**: `docs/evaluation/2026-08-26-biancheng-v025-eval.md`；前置证据 job `634f7f96`（证据见本记录 §8/§9）
 
 ## 1. Context
 
@@ -39,6 +39,8 @@
 - T1（V0.2.4 评估 634f7f96）：大儿子/长子/次子/第二个儿子 独立 canonical；顺顺 被 P16 吸收。
 - T2（2026-08-26 只读复核）：ch5b 偏移确认全族同 chunk；45/61 统计。
 - T3（2026-08-26）：V0.2.5-b 设计锁定（含修订：unresolved 不注册；spec `2026-08-26-v025b-descriptive-policy-design.md`）。
+- T4（2026-08-26 实现）：-b 落地（deferred + chunk 末重召回 + 单次 batch judge + unresolved 四路 + T-b1..T-b14）；unit 188 / integration 15 全绿。
+- T5（2026-08-26 真实评估 1b7b7c1b）：`descriptive_unresolved=9` / `composite_unresolved=1`（**B1 机制真实生效**）；ch5b 一族仍 6 canonical（长子/次子/第二个儿子/大儿子 因 category≠DESCRIPTIVE 绕过 B1 → **D5 实证**）；P17 = **PARTIAL**。
 
 ## 6. Initial Hypothesis
 
@@ -110,8 +112,10 @@ Step 5  重放（mock 双序）→ 确认顺序敏感（实现后做 M1/M2）
 
 ## 15. Validation
 
-- 待实现后跑 T-b1..T-b14（deterministic，双 extraction 顺序断言顺序无关）→ 修订 `test_hygiene.py:176` → 全量回归。
-- 真实评估（下次）验收指标：DESCRIPTIVE resolved/unresolved/canonical 数量（期望 unresolved>0、descriptive canonical 显著下降）；ch5b 一族（大儿子/长子/次子/第二个儿子）收敛到 天保/傩送（≤2 canonical；judge 配合下；P06 方差以趋势判定）。
+- ✅ T-b1..T-b14（deterministic，双 extraction 顺序断言顺序无关）全绿 → 修订 `test_hygiene.py:176` → 全量回归（unit 188 / integration 15）。
+- ✅ 真实评估（job 1b7b7c1b）：B1 机制生效（descriptive_unresolved=9 / composite_unresolved=1）；一族最终 天保(7)/傩送(2)/大儿子(2)/长子(1)/次子(1)/第二个儿子(1) = 6 canonical——**未达 T-b3 的 {天保,傩送}**。
+- ⚠️ **归因**：不是机制失败（10 次 unresolved 实证 + T-b 全绿）；是 **D5 Known Limitation**——一族 4 名 extraction category 非 DESCRIPTIVE（None→PERSON fallback 或 LLM 标 PERSON）→ 绕过 B1 立即注册。**记录为 P017 Known Limitation / P06 follow-up，不改代码。**
+- 另含 P08/P06 域：傩送↔二老 分裂（提取变异性）、岳云(ch5) 独立 canonical（与 -b 无关）。
 
 ## 16. Trade-offs
 
@@ -126,9 +130,9 @@ Step 5  重放（mock 双序）→ 确认顺序敏感（实现后做 M1/M2）
 
 ## 18. Follow-up
 
-- 实现 -b 前跑 M1/M2 mock 实验（ch5b 夹具双序重放）验证顺序敏感与收敛。
-- B2（跨 chunk/跨章 deferred）独立设计。
-- P06 follow-up：LLM category 覆盖率/质量（category=None 时 B1 不生效）。
+- ✅ -b 实现 + 真实评估 PARTIAL（见 §15）。
+- **D5 / P06 follow-up**：extraction category 覆盖率与质量（category=None 时 B1 不生效；本次 39 个 mc=1 中规则推断 24 个潜在非专名碎片候选——真实 category 分布需重放或链路日志确认）。
+- **B2**（跨 chunk/跨章 deferred）独立设计（真实评估一族 4 名绕过 B1 亦与 B1 的 chunk 内范围有关）。
 - RC2 覆盖面缺口（两个小孩子/两个年青人）→ P09 follow-up。
 
 ## 19. Current Limitation

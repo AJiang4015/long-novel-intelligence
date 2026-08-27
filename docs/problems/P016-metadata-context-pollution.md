@@ -1,16 +1,16 @@
 # P016 — Metadata/Epigraph Context Pollution：非正文文本污染 canonical 首现
 
-- **Status**: 🔍 investigating（V0.2.5-a 设计已锁定，未实现）
+- **Status**: ✅ resolved/verified（P16-a 已实现并真实评估验证 **PASS**；P16-b 单独立项见 P018）
 - **Severity**: High（可整族吞并正文实体：顺顺 组消失）
 - **Domain**: ER 算法 / 章节上下文
 - **Tags**: er, context, section-type, epigraph, metadata, canonical-sink, pollution
 - **First Seen**: V0.2.4 真实《边城》评估（job `634f7f96`，novel `5c311fb3`）
-- **Last Verified**: 2026-08-26（只读复核：EPUB 结构 + Neo4j 节点/边）
+- **Last Verified**: 2026-08-26 真实评估（job `1b7b7c1b`，novel `0ef3bd31`）
 - **Evidence Level**: HIGH（结构事实：ch2 题记含 父亲、父亲 chapters 含 2、顺顺 无节点、沈从文/兆和 纯非正文）；MEDIUM（吸收顺序依赖模型与单次运行，ch4 等 chunk 抽取失败引入噪声）
 - **Decision Type**: EXPERIMENT_RESULT（真实评估观察）+ DESIGN_DECISION（V0.2.5-a 方案）
-- **Related Problems**: P08（级联破坏 merge 桥接）；P09（RC3 词表边界：祖父/父亲/母亲 不入表）；P06（judge 吸收放大）；P17（共用注册缝，策略独立）
-- **Related Commits**: 无（V0.2.5-a 未实现）；前置冻结 RC2 `0febdc1` / RC3 `83db5f7`/`9f3b85f`
-- **Related Evaluation Reports**: job `634f7f96` / novel `5c311fb3`（无独立报告文件；证据见本记录 §8/§9）
+- **Related Problems**: P08（级联破坏 merge 桥接）；P09（RC3 词表边界：祖父/父亲/母亲 不入表）；P06（judge 吸收放大）；P17（共用注册缝，策略独立）；P18（P16-b：正文 relational-role sink，单独立项）
+- **Related Commits**: V0.2.5-a 实现 `c357e5f`（feat）/`27c8a2c`（test）/`cda30b1`（docs）
+- **Related Evaluation Reports**: `docs/evaluation/2026-08-26-biancheng-v025-eval.md`；前置证据 job `634f7f96`（无独立报告文件，证据见本记录 §8/§9）
 
 ## 1. Context
 
@@ -41,6 +41,8 @@
 - T2（V0.2.4 评估 634f7f96，qwen3.7-plus-2026-05-26）：父亲 吸收 顺顺 组；沈从文/兆和 入图。
 - T3（2026-08-26 只读复核）：EPUB 结构确认；Neo4j 非正文污染节点清单（5 个）；ch5b 同 chunk 证据（顺顺@3820 与「作父亲的」@~4430）。
 - T4（2026-08-26）：V0.2.5-a 设计锁定（spec `2026-08-26-v025a-context-er-design.md`）。
+- T5（2026-08-26 实现）：V0.2.5-a 落地（sections.py + Chapter/Chunk.section_type + provisional/promotion/finalize + T-a1..T-a14）；unit 174 / integration 15 全绿。
+- T6（2026-08-26 真实评估 1b7b7c1b）：非正文 canonical=0（沈从文/兆和 消失）；provisional 3→3 dropped；祖父/母亲 无题记章节；`父亲` canonical 不存在 → **PASS**。
 
 ## 6. Initial Hypothesis
 
@@ -114,9 +116,9 @@ Step 6  区分：非正文首现污染（P16）vs 正文内 relational-role sink
 
 ## 15. Validation
 
-- 待实现后跑 T-a1..T-a14（deterministic）→ 全量回归（hygiene 59 / 124 / 148 / integration 15）。
-- 真实评估（下次）验收指标：非正文 canonical 数量下降（沈从文/兆和 消失）；provisional→promoted / provisional→dropped 计数；父亲 first_seen 不再含 ch2。
-- ⚠️ **若 `顺顺→父亲` 在 V0.2.5-a 后仍发生 → 不判 P16-a 失败**：那是已切出的 **P16-b（正文 relational-role canonical sink）**，本次评估反而可第一次干净观察 P16-b（不再与题记污染混杂）。
+- ✅ T-a1..T-a14（deterministic）全绿 → 全量回归（unit 174 / integration 15）。
+- ✅ 真实评估（job 1b7b7c1b）：非正文 canonical=0（沈从文/兆和 消失）；provisional 3→3 dropped；祖父 mc=14 chapters 无 ch2/3；母亲 mc=7 无 ch3；`父亲` canonical 不存在 → **P16-a = PASS**。
+- ⚠️ **`顺顺→父亲` 在 V0.2.5-a 后仍在正文内发生（ch5b「作父亲的」）→ 不判 P16-a 失败**：属已切出的 **P16-b（正文 relational-role canonical sink，P018 单独立项）**；本次评估为 P16-b 首次干净观察（不再与题记污染混杂）。
 
 ## 16. Trade-offs
 
@@ -132,9 +134,10 @@ Step 6  区分：非正文首现污染（P16）vs 正文内 relational-role sink
 
 ## 18. Follow-up
 
-- 实现 -a 后全量回归；下次真实评估补 D3 诊断（非正文 chunk PERSON candidates 清单）。
-- **P16-b**（正文 relational-role canonical sink）独立诊断设计。
+- ✅ -a 实现 + 真实评估 PASS（见 §15）。
+- **P16-b**（正文 relational-role canonical sink）：**已单独立项 → P018**（真实评估首次干净观察：顺顺 aliases 8 项全可解释、翠翠的父亲 未错吸；机制脆弱待设计）。
 - RC2 覆盖面缺口（两个小孩子/两个年青人 未命中 COLLECTIVE 模式）→ P09 follow-up（不在 P16 范围）。
+- 链路可观测性（下次评估前为 extract/judge 增加日志或中间产物落盘，用于直接观测 canonical 决策）→ 代码改动，另立项。
 
 ## 19. Current Limitation
 

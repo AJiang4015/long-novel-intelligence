@@ -34,6 +34,7 @@
 - **不把 ER 失败一律归因于 judge**（P06 ≠ P04/P05/P08/P09）
 - **不把「父亲/母亲/祖父」加入 generic 词表**（P16 是 context 问题；正文真实人物，RC3 已锁）
 - **非正文专名（兆和/沈从文）保留于抽取输出；无正文确认不入图**（V0.2.5-a provisional/flush）
+- **不因「顺顺→父亲 正文内吸收仍存在」判 P16-a/P17 失败**（P16-b 已单独立项 P018；角色称谓吸收语义可能正确）
 
 ---
 
@@ -58,6 +59,7 @@
 | failed_blocks 只有 unexpected:LLMError | `[llm]` 日志 status/body | P07 |
 | canonical chapters 含非正文（版权/题记/推广，如 1/2/3/25） | 非正文 canonical 清单（MATCH Person 的 chapters 交集） | P16 |
 | 描述性称谓与真名分裂（大儿子↔天保、长子/次子 独立节点） | chunk 内首现顺序重放（mock judge 双序） | P17 |
+| 正文角色称谓被 canonical 吸收（顺顺 aliases 含 父亲/爸爸/爹爹） | aliases 逐条原文可解释性核对（正吸收 vs 跨人物错吸） | P18 |
 
 ---
 
@@ -79,8 +81,9 @@
 | P12 | 沙箱/环境限制清单 | 环境与沙箱 | ✅ | Medium | HIGH | — |
 | P13 | 脚本超时杀 + stdout 缓冲丢输出 | 环境与沙箱 | ✅ | Low | HIGH | — |
 | P14 | 依赖/驱动 API 坑汇总 | 基础设施 | ✅ | Medium | HIGH | — |
-| P16 | 非正文（版权/题记/推广）污染 canonical 首现 | ER 算法 | 🔍 | High | HIGH | [P016](docs/problems/P016-metadata-context-pollution.md) |
+| P16 | 非正文（版权/题记/推广）污染 canonical 首现 | ER 算法 | ✅ | High | HIGH | [P016](docs/problems/P016-metadata-context-pollution.md) |
 | P17 | DESCRIPTIVE 首现碎片化（无候选直接建 canonical） | ER 算法 | 🔍 | High | HIGH | [P017](docs/problems/P017-descriptive-fragmentation.md) |
+| P18 | 正文 relational-role canonical sink（P16-b：父亲→顺顺 类吸收） | ER 算法 / judge | 🔍 | Medium | HIGH | [P018](docs/problems/P018-relational-role-canonical-sink.md) |
 
 ---
 
@@ -116,14 +119,20 @@
 ### P16 — 非正文（版权/题记/推广）污染 canonical 首现
 
 - **Trigger**: canonical chapters 含非正文章节（如 1/2/3/25）；正文高频实体被题记亲属称谓 canonical 吸收（父亲→顺顺）
-- **当前状态**: V0.2.5-a 设计已锁定（section 分类 + provisional/promotion/flush），未实现；P16-b（正文内 relational-role sink）另行诊断
+- **当前状态**: ✅ **已解决并验证**（V0.2.5-a：section 分类 + provisional/promotion/flush；真实评估 1b7b7c1b：非正文 canonical=0、provisional 3→3 dropped、祖父/母亲 无题记章节 → PASS）；正文内 父亲→顺顺 类吸收属 **P18**（P16-b），不判 P16-a 失败
 - → [P016 完整记录](docs/problems/P016-metadata-context-pollution.md) / [V0.2.5-a spec](docs/superpowers/specs/2026-08-26-v025a-context-er-design.md)
 
 ### P17 — DESCRIPTIVE 首现碎片化
 
 - **Trigger**: DESCRIPTIVE/COMPOSITE 无候选直接建 canonical（大儿子/长子/次子 与 天保/傩送 分裂）；chunk 内首现顺序敏感
-- **当前状态**: V0.2.5-b 设计已锁定（chunk 内 deferred + 单次 batch judge + unresolved 不注册），未实现；B2（跨 chunk deferred）后续
+- **当前状态**: V0.2.5-b 已实现并验证 **PARTIAL**（B1 机制生效：unresolved 10 次；ch5b 一族未收敛系 **D5 category 缺口**——category=None/PERSON 绕过 B1）；B2（跨 chunk deferred）后续
 - → [P017 完整记录](docs/problems/P017-descriptive-fragmentation.md) / [V0.2.5-b spec](docs/superpowers/specs/2026-08-26-v025b-descriptive-policy-design.md)
+
+### P18 — 正文 relational-role canonical sink（P16-b）
+
+- **Trigger**: 正文角色称谓被 canonical 吸收（顺顺 aliases 含 父亲/爸爸/爹爹/中年人）；同一称谓指代多人物（父亲 = 顺顺 / 翠翠之父）
+- **当前状态**: 真实评估首次干净观察（8 个 aliases 全可解释、翠翠的父亲 未错吸）；机制脆弱（依赖 judge null + unresolved 兜底）；**待单独立项设计**
+- → [P018 完整记录](docs/problems/P018-relational-role-canonical-sink.md)
 
 ---
 
@@ -163,8 +172,9 @@
 | [P009-mention-hygiene.md](docs/problems/P009-mention-hygiene.md) | P09 mention hygiene 污染 |
 | [P010-cooccurrence-order-sensitivity.md](docs/problems/P010-cooccurrence-order-sensitivity.md) | P10 共现顺序敏感 |
 | [P011-all-chunks-failed-status.md](docs/problems/P011-all-chunks-failed-status.md) | P11 全 chunk 失败状态 |
-| [P016-metadata-context-pollution.md](docs/problems/P016-metadata-context-pollution.md) | P16 非正文上下文污染 canonical 首现 |
-| [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化 |
+| [P016-metadata-context-pollution.md](docs/problems/P016-metadata-context-pollution.md) | P16 非正文上下文污染 canonical 首现（✅ PASS） |
+| [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化（PARTIAL，D5 缺口） |
+| [P018-relational-role-canonical-sink.md](docs/problems/P018-relational-role-canonical-sink.md) | P18 正文 relational-role canonical sink（P16-b，待设计） |
 
 **中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md 对应规则中。
 
