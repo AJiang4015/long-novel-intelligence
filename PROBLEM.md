@@ -131,7 +131,7 @@
 ### P18 — 正文 relational-role canonical sink（P16-b）
 
 - **Trigger**: 正文角色称谓被 canonical 吸收（顺顺 aliases 含 父亲/爸爸/爹爹/中年人）；同一称谓指代多人物（父亲 = 顺顺 / 翠翠之父 / 老船夫）
-- **当前状态**: 诊断+设计评审中（根因：judge 无条件接受 resolves_to；候选 A+B：role alias 证据准入——裸/限定区分 + ≥2 独立证据 + 冲突信号 + 全书末兜底；spec `2026-08-26-p16b-relational-role-design.md`）；父亲 因跨人物证据正确地不 alias（防 sink）
+- **当前状态**: 诊断+设计评审中（v2 已修复 finalize 绕过 gate 矛盾：observation 永不自动晋升 + 跨 canonical 冲突→blocked + 触发范围收窄；spec `2026-08-26-p16b-relational-role-design.md`）；父亲 因跨人物证据正确地不 alias（防 sink）
 - → [P018 完整记录](docs/problems/P018-relational-role-canonical-sink.md) / [V0.2.6 spec](docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md)
 
 ---
