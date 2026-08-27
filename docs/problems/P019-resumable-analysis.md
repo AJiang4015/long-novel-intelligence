@@ -1,6 +1,6 @@
 # P019 — Ingest 任务不可恢复，中断后重跑重复消耗 LLM token（Resumable Analysis / Checkpointed Pipeline）
 
-- **Status**: 🔍 designing（Problem Record + Design Spec 已产出，待 Review；未实现）
+- **Status**: ✅ implemented（代码 + 测试完成并提交 `d726d2f`）；真实评估完成（Run 5，qwen3.8-flash）——见 §18 / [评估报告](../evaluation/2026-08-28-biancheng-p19-resume-eval.md)
 - **Severity**: High（token 成本 + 可靠性）
 - **Domain**: 流程 / pipeline 可靠性 / 基础设施
 - **Tags**: checkpoint, resume, idempotency, token-cost, job-recovery, durable-state
@@ -167,6 +167,10 @@ extraction + judge **双层文件 checkpoint** + 版本/输入指纹 + **同文�
 ## 18. Follow-up
 
 1. Spec Review Round 2 通过（2026-08-28；两项阻断修订合入 v1.2：COMPLETED 准入收紧 R1 / index 复合键 R2）→ 进入实现；
+2. ✅ 实现完成（checkpoint 层 / 编排 / ReplayJudge·ReplayMergeJudge / 测试）并提交 `d726d2f`（unit 257 + integration 16 全绿，AC-1..AC-11）；
+3. ✅ **真实评估完成（Run 5，qwen3.8-flash，2026-08-28）**：resume 时 extraction 26/27 chunk 零重复、**judge 19/19 全部重放（delta=0）**、novel 复用 + 新 job、resume job completed（failed=[]）；AC-2 逐字节一致性在 mock 层成立，真实 LLM 下因 P06 方差与 Run A 自身失败不可逐字节比较（结构级差异归因记录）。详见 [评估报告](../evaluation/2026-08-28-biancheng-p19-resume-eval.md)；
+4. 评估发现（既有行为，另立记录/跟进）：merge_judge 请求体超 DashScope 6MB 上限（桥接证据过大）；qwen3.7-flash 免费额度耗尽（403 FreeTierOnly，账户域）；真实网络不稳定（RemoteProtocolError/ReadTimeout）——resume/重试机制均正确处理；
+5. 长期决策登记 DECISIONS.md（D-18，docs-only，独立提交不回改 d726d2f）。
 2. 实现（见 Spec §10 文件清单）；
 3. unit + integration 测试（Spec §13 测试矩阵）；
 4. 真实评估（如适用：真实 LLM 中断恢复验证，按 TESTING.md §6/§9 Environment Baseline）；

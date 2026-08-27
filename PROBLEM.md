@@ -144,7 +144,7 @@
 
 - **Trigger**: job 中途失败（token quota / 网络 / 进程异常）后重传同一 EPUB 或重启后端——已完成 chunk 无持久化恢复能力，重跑重复消耗全部 token
 - **区分**: 本问题 ≠ P04/P05（那些是失败诱因）；≠ P11（终态语义）；修复目标 = checkpoint / resume / 幂等，**不改任何 ER 语义**
-- **当前状态**: 🔍 **designing（2026-08-28 立项）**——代码审计确认 extraction/judge 中间结果零持久化、JobStore 进程内（D-14）；已确认设计选择（用户拍板）：`POST /api/novels` 不变、EPUB sha256 内容身份、extraction + judge 双层 checkpoint、judge identity = `chunk_id + judge_version + judge_input_fingerprint`、job_id 进程内 / novel_id 复用 / checkpoint 为 durable recovery state、不 supersede D-14、不新增 resume API、前端零改动。核心验收：resume 时 fingerprint 一致且 COMPLETED 的 checkpoint 零 LLM 调用，全量 run vs resume run 结果 canonical 序列化后逐字节一致。**Review Round 1（10 条）+ Round 2（2 条阻断项：COMPLETED 准入收紧 / index 复合键）已全部修订（Spec v1.2）**，进入实现阶段
+- **当前状态**: ✅ **implemented + 真实评估完成（2026-08-28）**——实现提交 `d726d2f`（unit 257 + integration 16 全绿，AC-1..AC-11）；真实评估（Run 5，qwen3.8-flash）：resume 时 extraction 26/27 chunk 零重复、judge 19/19 全部重放（delta=0）、novel 复用 + 新 job、resume job completed；AC-2 逐字节一致性 mock 层成立（真实 LLM 下 P06 方差不可逐字节比较，结构级差异归因记录）。评估发现（既有行为）：merge_judge 请求体超 DashScope 6MB、qwen3.7-flash 免费额度 403、真实网络不稳定——resume/重试机制均正确处理。待办：D-18 决策登记（docs-only）。详见 [评估报告](docs/evaluation/2026-08-28-biancheng-p19-resume-eval.md)
 - → [P019 完整记录](docs/problems/P019-resumable-analysis.md) / [P19 Design Spec](docs/superpowers/specs/2026-08-28-p019-resumable-analysis-design.md)
 
 ---
