@@ -140,6 +140,35 @@ def test_generic_no_candidate_dropped():
     assert "年青人" not in r.canonical_aliases
 
 
+def test_llm_generic_judge_null_dropped_not_canonical():
+    """D5-b（B-1）：LLM category=GENERIC（非词表词，母亲 型）+ judge null →
+    不注册 canonical、不注册 alias、不进 resolved_chars、不进 merge_extractions、图中无独立 Person。"""
+    from app.pipeline.merger import merge_extractions
+    r = EntityResolver(judge=judge_null)
+    r.resolve(make_chunk(1), extraction(["顺顺"]))   # 建立 known canonical
+    out, failed = r.resolve(make_chunk(2, text="顺顺母亲"),
+                            extraction(["母亲"], {"母亲": MentionCategory.GENERIC}))
+    assert "母亲" not in r.known
+    assert "母亲" not in r._index
+    assert "母亲" not in r.canonical_aliases
+    assert all(c.name != "母亲" for c in out.characters)          # 不进 resolved_chars
+    merged = merge_extractions([(make_chunk(2, text="顺顺母亲"), out)])
+    assert "母亲" not in merged.persons                            # 图中无独立 Person
+    assert not failed
+
+
+def test_llm_generic_judge_pass_alias_unchanged():
+    """D5-b（B-1）回归：LLM category=GENERIC（非词表词）+ judge 通过 → alias 行为完全不变。"""
+    def j(text, pending):
+        return AliasJudgeResult.model_validate({
+            "resolutions": [{"mention": p.mention, "resolves_to": "傩送"} for p in pending]})
+    r = EntityResolver(judge=j)
+    r.resolve(make_chunk(1), extraction(["傩送"]))
+    out, _ = r.resolve(make_chunk(2), extraction(["年青人"], {"年青人": MentionCategory.GENERIC}))
+    assert r.known.get("年青人") == "傩送"
+    assert "年青人" in r.canonical_aliases["傩送"]
+
+
 def test_generic_does_not_absorb_polluted_collective_canonical():
     """GENERIC 的候选不得含历史污染 COLLECTIVE canonical（_recall 排除硬过滤 canonical）。"""
     seen = {}

@@ -132,6 +132,7 @@ Step 5  重放（mock 双序）→ 确认顺序敏感（实现后做 M1/M2）
 
 - ✅ -b 实现 + 真实评估 PARTIAL（见 §15）。
 - **D5 / P06 follow-up（Task B，独立立项）**：extraction category 覆盖率与质量（category=None 时 B1 不生效；V0.2.6 再实证——爸爸/母亲 绕过 P16-b role gate）。**问题边界与候选方案见 spec `docs/superpowers/specs/2026-08-27-p017-d5-category-coverage-design.md`**（先 Task A lineage 量化 → prompt 增强 A/B → 结构补标评审 → 或 Accepted Limitation，不直接改 P16-b）。
+- ✅ **D5-b / B-1（V0.2.8）**：LLM category=GENERIC + judge null 不再进入 canonical fallback（`_is_effective_generic` 与 `_resolve_name` 对齐 + `_chunk_dropped` 防泄漏；null/missing/exception 三路径）。真实《边城》重跑：16 个 LLM generic mention 由 null_registered 碎片改为 dropped；母亲 无独立 Person（judge 判 女孩子的母亲 → alias）。未改 P16-b gate / 词表 / prompt。**D5-a（extraction coverage，prompt A/B）待独立立项**。
 - **B2**（跨 chunk/跨章 deferred）独立设计（真实评估一族 4 名绕过 B1 亦与 B1 的 chunk 内范围有关）。
 - RC2 覆盖面缺口（两个小孩子/两个年青人）→ P09 follow-up。
 

@@ -249,11 +249,14 @@ class EntityResolver:
                 self._apply_judge(judge_result, pending)
             except Exception as exc:
                 # validation/网络等任何失败：待判定 mention 按 category 分派（V0.2.5-b D4）——
-                # PERSON/None → 既有 fail-safe 注册；GENERIC → 丢弃（与 RC3「GENERIC 永不
-                # canonical」对齐，修复既有 exception 路径洞）；DESCRIPTIVE/COMPOSITE →
-                # unresolved（永不 canonicalize，避免 fail-safe 与 unresolved 决策冲突）
+                # PERSON/None → 既有 fail-safe 注册；GENERIC（词表 OR LLM category，D5-b/B-1）→
+                # 丢弃（与 RC3「GENERIC 永不 canonical」对齐，修复既有 exception 路径洞）；
+                # DESCRIPTIVE/COMPOSITE → unresolved（永不 canonicalize，避免 fail-safe 与
+                # unresolved 决策冲突）
                 for p in pending:
-                    if classify_mention(p.mention) == MentionCategory.GENERIC:
+                    if self._is_effective_generic(p.mention):
+                        # LLM generic（非词表）需显式剔除，防 resolved_chars 泄漏（同 null 分支）
+                        self._chunk_dropped.add(p.mention)
                         continue
                     # ---- lineage：judge 异常（③ judge + ④⑤ 分派）----
                     self._lineage_judge(
@@ -448,6 +451,18 @@ class EntityResolver:
         if nonbody and cat in (MentionCategory.DESCRIPTIVE, MentionCategory.COMPOSITE):
             return "nonbody_dropped", False, None, False
         return "null_registered", True, name, nonbody
+
+    def _is_effective_generic(self, name: str) -> bool:
+        """effective category 是否 GENERIC（与 _resolve_name 的 category precedence 一致，D5-b/B-1）。
+
+        - hygiene 词表命中（RC3）→ 强制 GENERIC，无论 LLM category（含 LLM 误标 PERSON）；
+        - 否则使用 LLM category（_category_of，可能 None → 非 generic）。
+        用于 judge-null / missing / exception 路径：GENERIC（含 LLM 标注 generic）永不 canonicalize。
+        """
+        from app.pipeline.hygiene import classify_mention
+        if classify_mention(name) == MentionCategory.GENERIC:
+            return True
+        return self._category_of(name) == MentionCategory.GENERIC
 
     def _role_drop_facts(self, mention: str, target: str) -> tuple[str, str | None, int]:
         """P16-b gate drop 的 admission 标签/原因/evidence_count（decision 后状态反推；纯观测）。"""
@@ -665,8 +680,12 @@ class EntityResolver:
                 self._lineage_admission(r.mention, "invalid_judge_output", reason="mention_hard_filtered")
                 self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
                 continue  # V0.2.4 防御：被硬过滤 mention 的判定结果不写 known
-            # V0.2.4-b RC3：relational generic（词表判定 GENERIC）判 null → 丢弃，不注册 canonical
-            if r.resolves_to is None and classify_mention(r.mention) == MentionCategory.GENERIC:
+            # V0.2.4-b RC3 + V0.2.8 D5-b（B-1）：GENERIC（hygiene 词表 OR LLM category）判 null
+            # → 丢弃，不注册 canonical。_chunk_dropped 防 resolved_chars 泄漏——LLM generic（母亲 型）
+            # 不在词表，resolve() 尾部 dropped 集合（仅查 classify_mention）不命中，若无此剔除，
+            # 母亲 仍会以原名进入 resolved_chars 并被 merge_extractions 建成 Person。
+            if r.resolves_to is None and self._is_effective_generic(r.mention):
+                self._chunk_dropped.add(r.mention)
                 # ---- lineage：GENERIC null 丢弃（④⑤）----
                 self._lineage_admission(r.mention, "skipped_generic", reason="generic_null")
                 self._lineage_registration(r.mention, registered=False, alias_to=None, final_canonical=None)
@@ -721,8 +740,10 @@ class EntityResolver:
                 # V0.2.4 防御：被硬过滤 mention 不得因防御路径注册
                 if is_hard_filtered(p.mention):
                     continue
-                # V0.2.4-b RC3 防御：relational generic 不得因防御路径注册
-                if classify_mention(p.mention) == MentionCategory.GENERIC:
+                # V0.2.4-b RC3 防御 + V0.2.8 D5-b（B-1）：GENERIC（词表 OR LLM category）不得因
+                # 防御路径注册；LLM generic 需显式剔除（同 null 分支泄漏防护）
+                if self._is_effective_generic(p.mention):
+                    self._chunk_dropped.add(p.mention)
                     continue
                 # V0.2.5-b：DESCRIPTIVE/COMPOSITE 缺席 → unresolved；其余走 -a 语义
                 # ---- V0.2.7 lineage：③ judge missing（防御路径）+ ④⑤ 分派 ----

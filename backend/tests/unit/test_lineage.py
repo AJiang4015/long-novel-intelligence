@@ -297,6 +297,23 @@ def _base_events(mention="翠翠的祖父", category="descriptive", hygiene=None
     return events
 
 
+def test_lineage_llm_generic_judge_null_skipped(ws_tmp):
+    """D5-b（B-1）：LLM generic（非词表，母亲 型）+ judge null → admission=skipped_generic + 输出剔除。"""
+    def judge_null(text, pending):
+        return AliasJudgeResult.model_validate(
+            {"resolutions": [{"mention": p.mention, "resolves_to": None} for p in pending]})
+    r = EntityResolver(judge=judge_null, lineage=enabled_recorder(ws_tmp))
+    r.resolve(make_chunk(1, text="顺顺"), extraction(["顺顺"], {"顺顺": P}))
+    out, _ = r.resolve(make_chunk(2, text="顺顺母亲"),
+                       extraction(["母亲"], {"母亲": MentionCategory.GENERIC}))
+    evs = events_of(r._lineage)
+    ad = [e for e in evs if e["event"] == "admission" and e["mention"] == "母亲"]
+    rg = [e for e in evs if e["event"] == "registration" and e["mention"] == "母亲"]
+    assert ad and ad[-1]["admission"] == "skipped_generic" and ad[-1]["admission_reason"] == "generic_null"
+    assert rg and rg[-1]["registered"] is False
+    assert all(c.name != "母亲" for c in out.characters)
+
+
 def test_diagnose_cuicui_grandfather_judge_null(ws_tmp):
     """翠翠的祖父：category=descriptive + 候选[祖父] + judge null → judge 层（P06）。"""
     p = write_jsonl(ws_tmp, _base_events(mention="翠翠的祖父", category="descriptive",

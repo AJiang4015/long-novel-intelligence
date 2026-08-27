@@ -1,8 +1,8 @@
 # Task B v2：P017 D5 问题重划分 — extraction coverage（D5-a）与 null 路径类别不一致（D5-b）
 
 - **日期**: 2026-08-27（v2，基于 Task A 真实 lineage 事实重写）
-- **版本**: v2（取代 v1；v1 全文保留于文末附录，不覆盖历史）
-- **状态**: 设计评审中（**只做问题重划分与方案设计，不写任何修复代码**）
+- **版本**: v2.1（**D5-b / B-1 已实施并通过验收**，见 §9；D5-a / A-1 待独立 A/B）
+- **状态**: D5-b 实现中→✅ 已验收（commit 见 git log）；D5-a 设计评审中（只评审不实现）
 - **前置**: Task A 真实验收 `docs/evaluation/2026-08-27-biancheng-task-a-lineage-eval.md`（qwen3.7-flash，
   27/27 chunk 成功，lineage 633KB）；v1 为本文件历史版本
 - **约束（沿用）**: 不修改 P16-b gate / 不引入 classifier / 不扩 generic 词表（P16/P018 Do Not Reopen）/
@@ -168,6 +168,47 @@ Step 4  D5 原义（category=None → PERSON fallback）
   lineage 直接观测为准）。
 - 不把 D5-a 与 D5-b 混为一个修复（机制/修复面/验收独立）。
 - 不在本设计评审前写任何修复代码。
+
+## 9. D5-b / B-1 实施与验收（v2.1，2026-08-27）
+
+**实现**（commit 见 git log，与 A-1 独立提交）：
+- `resolver.py` 新增 `_is_effective_generic(name)`：effective category 是否 GENERIC（hygiene 词表
+  优先，其次 LLM category——与 `_resolve_name` 的 category precedence 一致）。
+- `_apply_judge` null 分支：`classify_mention(...)==GENERIC` → `_is_effective_generic(...)`；
+  **同时 `self._chunk_dropped.add(mention)`**——防 resolved_chars 泄漏（LLM generic 非词表词，
+  resolve() 尾部 dropped 集合只查 classify_mention，不命中；否则 母亲 会以原名残留并在
+  merge_extractions 建成 Person，已实测泄漏）。
+- missing-judge 防御路径、judge exception 路径同样对齐（GENERIC 永不 canonicalize 语义全覆盖）。
+- **未改**：`_role_alias_decision` / P16-b evidence gate / generic 词表 / prompt / schema；零新增 LLM 调用。
+
+**目标行为（实测确认）**：LLM category=GENERIC + judge null → 不注册 canonical / 不注册 alias /
+不进 resolved_chars / 不进 merge_extractions / 图中无独立 Person（lineage: admission=skipped_generic,
+reason=generic_null; registration registered=False）。
+
+**控制流确认（实现前实测）**：`judge=null → _apply_judge → (旧) classify_mention 不命中 → 
+_register_or_unresolved → _register_mention → _register → canonical`（母亲 型确凿）；
+仅改 null 分支不加剔除 → resolved_chars 泄漏 → merger 仍建 Person（子类模拟实证）。
+
+**测试**（unit 228 = 225+3，integration 15 全绿）：
+- 新增 `test_llm_generic_judge_null_dropped_not_canonical`（母亲 型全链：不注册/不进输出/无 Person）
+- 新增 `test_llm_generic_judge_pass_alias_unchanged`（judge pass → alias 不变）
+- 新增 `test_lineage_llm_generic_judge_null_skipped`（lineage 事件断言）
+- 已有回归不变：词表 GENERIC + judge null（T-b10 弟弟）、judge pass（年青人）、P16-b 组
+  （父亲/翠翠的父亲/爹爹）、老船夫/祖父/顺顺 相关（test_role_policy M 组 / test_resolver 全量）。
+
+**真实《边城》重跑（ER_LINEAGE=1，qwen3.7-flash，27/27 chunk 成功）**：
+- **B-1 路径真实触发 16 次**：水手/伙计/屠户/脚夫/长年/新嫁娘/大的/小的/卖皮纸的过渡人/那个兵/
+  城中人/熟人/顺顺家一个长年/中寨人 等（均 LLM generic 非词表词）→ judge null → skipped_generic
+  丢弃（旧行为为 null_registered 碎片化）；persons 32 → 16（与 LLM 方差叠加）。
+- **母亲**：本轮 judge 判 resolves_to=女孩子的母亲 → alias（未走 null 路径；图中无独立 母亲 Person，
+  `女孩子的母亲.aliases=[白脸黑发小寡妇, 母亲, 妇人, 乡绅女人, 乡绅太太]`）。
+- **四历史案例归层无 B-1 回归**（B-1 仅影响 effective-generic + judge-null；四案例本轮路径：
+  翠翠的祖父=EXTRACTION_LAYER、岳云二老=ADMISSION_LAYER(target_mismatch, composite 非 generic)、
+  弟弟=EXTRACTION_LAYER、爷爷=SUCCESS(→老人)；与上一轮差异均为 LLM 方差，非 B-1 行为）。
+
+**验收结论**：D5-b / B-1 验收通过。A-1（D5-a）作为独立 prompt A/B 实验进入下一阶段（固定模型/温度/
+并发/EPUB/chunking/resolver，仅改 prompt，对比 extraction coverage / category / downstream ER /
+false-positive regression），单独提交，不与 D5-b 合并。
 
 ---
 
