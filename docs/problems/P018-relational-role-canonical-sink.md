@@ -1,16 +1,16 @@
 # P018 — 正文 relational-role canonical sink：角色称谓被正文 canonical 吸收（P16-b）
 
-- **Status**: 🔍 investigating（V0.2.5 真实评估首次干净观察；未立项设计）
+- **Status**: 🔍 investigating（设计评审中：候选 A+B 已细化，未实现）
 - **Severity**: Medium（本次无跨人物错吸实证；机制脆弱，judge 误判时存在错吸风险）
 - **Domain**: ER 算法 / judge 语义 / canonical 命名
-- **Tags**: er, relational-role, sink, alias-absorption, judge, ambiguity, p16-b
+- **Tags**: er, relational-role, sink, alias-absorption, judge, ambiguity, p16-b, role-admission
 - **First Seen**: V0.2.5 真实评估（job `1b7b7c1b`，novel `0ef3bd31`）
-- **Last Verified**: 2026-08-26（EPUB 原文逐条核对 aliases 可解释性）
-- **Evidence Level**: HIGH（父亲→顺顺 吸收存在且 8 个 aliases 全部可由顺顺解释）；MEDIUM（跨人物错吸为推断风险，本次未发生）
-- **Decision Type**: EXPERIMENT_RESULT（真实评估观察）
-- **Related Problems**: P16（P16-a 分离后残留的正文内机制）；P06（judge 判定方差）；P08（canonical 命名与分裂）
-- **Related Commits**: 无（未立项）；前置 P16-a 修复 `c357e5f`
-- **Related Evaluation Reports**: `docs/evaluation/2026-08-26-biancheng-v025-eval.md`
+- **Last Verified**: 2026-08-26（EPUB 原文逐条核对 aliases 可解释性 + mock 实验 M1-M5）
+- **Evidence Level**: HIGH（父亲→顺顺 吸收存在且 8 个 aliases 全部可由顺顺解释；M5 错吸可复现）；MEDIUM（错吸发生率为推断，依赖 judge 判别力）
+- **Decision Type**: EXPERIMENT_RESULT（真实评估观察 + mock 复现）+ DESIGN_DECISION（V0.2.6 候选 A+B：role alias 证据准入）
+- **Related Problems**: P16（P16-a 分离后残留的正文内机制）；P06（judge 判定方差）；P08（canonical 命名与分裂）；P17（共用注册缝，策略独立）
+- **Related Commits**: 无（未实现）；前置 P16-a 修复 `c357e5f`
+- **Related Evaluation Reports**: `docs/evaluation/2026-08-26-biancheng-v025-eval.md`；设计 spec `docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md`
 
 ## 1. Context
 
@@ -38,6 +38,8 @@ P16-a（题记污染）修复后，`父亲` 不再由题记注册 canonical；�
 - T1（V0.2.5 评估 1b7b7c1b）：顺顺 aliases 含 父亲/爸爸/爹爹/中年人/船总；父亲 canonical 不存在；翠翠的父亲 未进顺顺。
 - T2（2026-08-26 归因）：EPUB 逐条核对 8 个 aliases 全部可解释；ch16/24「翠翠的父亲」未错吸（-b unresolved 或未提取兜住）。
 - T3（2026-08-26）：确认为 P16-a 分离出的独立问题，单独立项（P018）。
+- T4（2026-08-26 mock 实验）：M1（单候选吸收成立）、M5（翠翠的父亲 仅与顺顺共现 + judge 误判 → **错吸可复现，机制零拦截**）、M3/M4（多候选/null 时 judge 可正确）→ 根因锁定为 **judge 层无条件接受 resolves_to**（single-candidate 为放大因素）。
+- T5（2026-08-26 设计评审）：候选 A（二次证据门槛）+ B（裸/限定结构区分）细化为 V0.2.6 spec；关键决策——父亲 因跨人物证据**正确地不建立 alias**（防 sink）；爸爸/爹爹 专属 → confirmed。
 
 ## 6. Initial Hypothesis
 
@@ -86,12 +88,15 @@ Step 5  区分：吸收语义正确性（本次全对）vs 机制脆弱性（jud
 
 - 无（尚未立项尝试修复；当前靠 judge null + unresolved 被动兜底）。
 
-## 13. Correct Approach（待设计，未锁定）
+## 13. Correct Approach（V0.2.6 候选 A+B，评审中）
 
-候选方向（均需另立设计/Problem Record）：
-- 区分「角色称谓吸收」与「跨人物错吸」：judge 输入增加关系/称谓上下文信号；或对高频 relational-role 称谓建立「先吸收后复核」机制。
-- 显式记录 sink canonical 的角色面（父亲=顺顺 的 role alias），供后续跨人物冲突检测。
-- **不承诺**：本轮不修改 resolver/judge 契约（见顶部报告声明）。
+- **role 形态判定**（确定性结构规则，非词表）：`qualified` = X的Y 结构 / 复合称谓（含 known 名子串）→ 锚点 X；`bare` = 其余纯角色词。GENERIC（RC3）不进入本机制。
+- **证据准入**（bare 与「qualified 且锚点 ∉ 候选集」）：judge 判 resolves_to → observation（按 chunk_id 去重）；≥2 独立证据 → confirmed → alias；<2 → 输出剔除。
+- **qualified 且锚点 ∈ 候选集**：保持现有单次 alias 路径（翠翠的祖父 → 祖父，T-b8 保持）。
+- **冲突信号**：judge null/missing/exception 累计；有冲突的 observation 不参与全书末兜底确认。
+- **全书末兜底**：无冲突的 observation 确认（防信息损失）；`finalize_role_confirmations()` 于 apply_aliases 前调用。
+- **合法 alias 保证**：爸爸（ch5/6/14/22）/ 爹爹（ch13/20）≥2 证据 → confirmed；**父亲 跨人物 → 正确地不 alias**（P16-b 目标）。
+- 详见 spec `docs/superpowers/specs/2026-08-26-p16b-relational-role-design.md`。
 
 ## 14. Invariants
 
@@ -101,24 +106,29 @@ Step 5  区分：吸收语义正确性（本次全对）vs 机制脆弱性（jud
 
 ## 15. Validation
 
-- 当前为观察状态：下次评估继续统计 顺顺 类 canonical 的 role alias 吸收与错吸情况。
-- 验收指标：role alias 吸收比例（正吸收 vs 错吸）；翠翠的父亲 类跨人物称谓是否持续被 unresolved 兜住。
+- mock 实证（已完成）：M1 单候选吸收成立；M5 错吸可复现（无防御）；M3/M4 多候选/null 时 judge 可正确。
+- 待实现后跑 M1-M12（deterministic）→ 全量回归（T-a/T-b/hygiene/resolver/integration 15）。
+- 真实评估验收指标：role alias 吸收正误率（爸爸/爹爹→顺顺 建立；父亲 不建立）；翠翠的父亲 类跨人物称谓持续被拦截；顺顺 类 sink canonical 不再扩大错吸。
 
 ## 16. Trade-offs
 
 - 语义正确的角色称谓吸收（爸爸→顺顺）是**期望行为**——不能一刀切禁止。
 - 错吸防护依赖 judge 判别力 + unresolved 兜底——脆弱但零额外成本。
-- 若引入显式 role 策略，需权衡 judge 输入复杂度与额外 LLM 成本。
+- **首次信息损失**：bare role 首次 mention 输出剔除；全书仅 1 次且无冲突 → 兜底确认时历史 chunk 无法追溯。
+- **父亲 不 alias 顺顺**：跨人物裸 role 不 sink（P16-b 目标），代价为「作父亲的」不入图（语义正确性优先）。
+- 证据门槛依赖 judge 初次判定正确（observation 记录 judge 判定）；两次独立错误证据才可能错确认——风险显著低于现状无条件接受。
 
 ## 17. Decision
 
-- 确认为独立问题（P018），**单独立项设计**；当前不修改代码。
-- 与 P16-a（题记污染）边界清晰：P16-a 已闭环，P16-b 是正文内机制。
+- 确认为独立问题（P018），与 P16-a（题记污染）/P17（chunk 顺序碎片）边界清晰，**三问题独立回溯**。
+- V0.2.6 采用候选 A+B（role alias 证据准入：裸/限定结构区分 + ≥2 独立证据 + 冲突信号 + 全书末兜底）；评审通过前不改代码。
 
 ## 18. Follow-up
 
-- 立项目设计（候选：role alias 记录 + 跨人物冲突检测；judge 上下文增强）。
-- 下次真实评估继续观察（顺顺 类 sink 吸收与错吸率）。
+- 设计评审通过 → 实现（resolver 新增 observation/conflict 状态 + `finalize_role_confirmations` + novels 接线）。
+- 实现前先落 M1-M12 fixture（当前行为基线全红 → 实现 → 全绿）。
+- 下次真实评估继续观察：顺顺 类 sink 吸收正误率、父亲 不建立 alias、翠翠的父亲 类持续拦截。
+- Group / 关系角色建模：留待未来（P16-b 不引入）。
 
 ## 19. Current Limitation
 
