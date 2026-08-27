@@ -183,6 +183,29 @@
 
 ---
 
+## D-18 — Checkpoint 是 durable recovery state，Job 是 execution handle
+
+- **Status**: Accepted（已实现并真实评估验证）
+- **Date**: 2026-08-28（P19 Resumable Analysis；实现 commit `d726d2f`；真实评估报告 `docs/evaluation/2026-08-28-biancheng-p19-resume-eval.md`）
+- **Context**: 一次小说分析消耗大量 token；job 中途失败（token quota / 网络 / 进程异常）后已完成 chunk 无持久化恢复能力，重跑重复消耗全部 token（P19）。JobStore 为进程内存储（D-14 已知限制：重启丢失）。
+- **Decision**:
+  1. **分层**：`job_id` = 当前执行实例（进程内，不复活）；`novel_id` = 小说身份（可被新 job 复用）；**checkpoint = durable recovery state**（「Job 是 execution handle，Checkpoint 才是 recovery state」）；
+  2. **双层持久化**：extraction 成功即持久化；judge 成功即持久化（失败不落盘 → 恢复时重试）；merge judge 同样重放；
+  3. **身份与指纹**：EPUB sha256 为内容身份；`config_fingerprint`（schema/chunking/extractor/prompt×3/**model**/chunk_size/overlap）判定分析配置兼容（换模型 = 旧 checkpoint 作废，必须重跑）；`structure_hash` 为 chunking 产物 integrity check；judge identity = `chunk_id + judge_version + judge_input_fingerprint`（**不绑定 chunk_id alone**——候选集/resolver 状态变化时旧结果不得复用）；
+  4. **同文件自动续跑**：`POST /api/novels` 不变；重传同 EPUB 且指纹兼容 → 复用 novel_id 续跑（跳过 COMPLETED、重试 FAILED）；完整完成重传 → 幂等（新 terminal job，零 LLM）；
+  5. **manifest 两态**：`IN_PROGRESS / COMPLETED`；COMPLETED 准入 = 无 FAILED extraction + 无 judge 失败 + 无 merge 缺口 + 写库成功（job 终态与 manifest 状态解耦）；
+  6. **CheckpointStore 层职责**：只做纯 I/O（原子写 / 路径防护 / 复合索引 `content_hash:config_fingerprint` / 损坏与写失败降级）；**不做任何业务决策（含兼容判定，归 api 层）**；
+  7. **失败不熔断**：FAILED chunk 每次 resume 重新尝试（attempts 仅观测计数）。
+- **Reason**: 恢复目标 = 已完成阶段零重复 LLM 调用；resolver 确定性 + 输入指纹重放保证恢复与全量运行一致；避免 Redis / 持久化 JobStore 的运维成本（D-14 哲学延续）。
+- **Consequence**:
+  - checkpoint 目录（`er_checkpoint_dir`，默认 `checkpoints/`）为 durable 中间态；Neo4j 仍是最终图唯一权威；
+  - 换模型 / prompt / chunk 配置任一变化 → 旧 checkpoint 作废（全新分析）——实验性改动（如 prompt A/B）天然不能复用旧 checkpoint，符合归因纪律；
+  - 新增 checkpoint 层（`backend/app/checkpoint/`，CHECKPOINT_LAYER.md），依赖方向 `api → checkpoint`（ARCHITECTURE.md 已更新）；
+  - 删除小说须同时清理 checkpoint（`CheckpointStore.delete_novel`）；
+  - 真实评估（qwen3.8-flash，中断 chunk20 → 重传续跑）：已完成 extraction 26/27 chunk 零重复、judge 19/19 全部重放（delta=0）、novel 复用 + 新 job、resume job completed（failed=[]）；AC-2 逐字节一致性在 mock 层成立（真实 LLM 下因 P06 方差不可逐字节比较）。
+
+---
+
 ## 决策索引
 
 | ID | Title | Status |
@@ -204,3 +227,4 @@
 | D-15 | hygiene 只做 hard filter | Accepted |
 | D-16 | section 分类为项目级启发式 | Accepted |
 | D-17 | P017 D5-b / B-1：generic + judge null 不进 canonical fallback（V0.2.8） | Accepted |
+| D-18 | Checkpoint 是 durable recovery state，Job 是 execution handle（P19） | Accepted |
