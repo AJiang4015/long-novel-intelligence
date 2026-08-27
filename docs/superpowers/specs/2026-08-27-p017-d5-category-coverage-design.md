@@ -1,3 +1,184 @@
+# Task B v2：P017 D5 问题重划分 — extraction coverage（D5-a）与 null 路径类别不一致（D5-b）
+
+- **日期**: 2026-08-27（v2，基于 Task A 真实 lineage 事实重写）
+- **版本**: v2（取代 v1；v1 全文保留于文末附录，不覆盖历史）
+- **状态**: 设计评审中（**只做问题重划分与方案设计，不写任何修复代码**）
+- **前置**: Task A 真实验收 `docs/evaluation/2026-08-27-biancheng-task-a-lineage-eval.md`（qwen3.7-flash，
+  27/27 chunk 成功，lineage 633KB）；v1 为本文件历史版本
+- **约束（沿用）**: 不修改 P16-b gate / 不引入 classifier / 不扩 generic 词表（P16/P018 Do Not Reopen）/
+  不增加 LLM 调用 / 不改 schema / 不改 prompt（除方案 A-1 需独立 A/B 评审）。
+
+## 0. 必须修正的两个旧假设（Task A 真实验证推翻/降级）
+
+| # | v1 假设 | Task A 事实（lineage + extraction_raw 直接观测） | 处理 |
+|---|---|---|---|
+| 1 | 爸爸 = 「category=None/PERSON 绕过 evidence gate」（V0.2.6 推断） | 本轮 `extraction_raw`（27 chunks 全量 dump）**爸爸 零出现**——该模型（qwen3.7-flash）根本未提取 爸爸 | **降级为历史推断**（仅对 V0.2.6 的 qwen3.7-max 成立），不再作为当前事实 / 不再驱动 gate 修改 |
+| 2 | 翠翠的祖父 = P06 judge/admission 问题（无法区分 judge null vs 未提取） | **EXTRACTION_LAYER 定案**：全文件 0 事件、extraction_raw 零出现 → LLM 未提取 | **从 P06 judge/admission 域移除**；不再用于推动 resolver/gate 修改；如需修复归入 D5-a 的覆盖清单 |
+
+## 1. 问题地图重划分：P017 D5 域 = D5（原义）+ D5-a + D5-b
+
+P017 的 D5 子项（V0.2.4-V0.2.6 记录：extraction category 覆盖率与质量）经 Task A 事实拆为三个
+**机制独立、修复面独立**的缺口；共享父问题（category 层缺口 → 碎片化/信息损失）与共享约束。
+
+| 子项 | 现象（本轮 lineage 事实） | 机制层 | 性质 |
+|---|---|---|---|
+| **D5（原义）** | 被提取但 category=None → judge null → `legacy PERSON fallback` 注册 canonical | resolver `_register_or_unresolved`（None → `_register_mention` → `_register`） | **设计性 Known Limitation**（P017 D2「兜底不静默丢人物」；代码路径仍存在，**本轮无直接观察案例**——老船夫/祖父 首现均为 person 非 None） |
+| **D5-a** | **extraction mention coverage 缺失**：爸爸 / 妈妈 / 娘 / 大儿子 / 长子 / 次子 / 哥哥（+ 翠翠的祖父）未出现在 extraction_raw | **extraction 输出层**（模型输出选择；V0.2.6 的 qwen3.7-max 部分词有输出 → 模型间方差） | 新拆分；修复面 = prompt coverage / 模型，**非 resolver** |
+| **D5-b** | **LLM generic 标签在 judge-null fallback 路径未生效**：母亲 被提取且 LLM 标 generic，chunk6 judge null → 仍注册 canonical（mc=7, aliases=[翠翠的母亲, 妇人]） | resolver `_apply_judge` null 分支与 `_resolve_name` 的 effective-category 判定**不一致** | 新拆分；修复面 = resolver 内部一致性（一行级），**不改 gate** |
+
+**划分结论**：A（D5-a）与 B（D5-b）**同属 P017 D5 域，但拆成两个独立子项**——共享主题与约束
+（category 层缺口、不扩词表、不改 gate），但机制层（extraction 输出 vs resolver fallback）与修复面
+（prompt A/B vs 代码一致性）完全不同，合在一起无法统一验收/回滚。
+
+---
+
+## 2. A（D5-a）：relational/generic mention extraction coverage 缺失
+
+### 2.1 归层：extraction coverage，不是 category 标注问题
+
+- 现象层：mention **未出现在 extraction 输出**（extraction_raw 零出现）——发生在 category 判定**之前**。
+- 因此 A **不是**「category missing / category wrong」（那些要求 mention 已提取）。
+- A **不是 extraction contract 缺口**：契约（`MentionCategory` 枚举 + `ExtractionResult`）已支持全部
+  相关类别——爹爹(descriptive)/父亲(generic)/母亲(generic)/祖父(person)/老船夫(person) 本轮均成功
+  输出且带类别。contract 无缺口。
+- A 的归层 = **extraction coverage（模型输出选择）**；修复手段 = **prompt coverage**（提示词覆盖，
+  指示模型抽取角色称谓）或模型选择/温度——均为「提示/覆盖」域。
+- 跨模型证据：V0.2.6（qwen3.7-max）爸爸 9 hits 被提取；本轮（qwen3.7-flash）零输出 → 覆盖随模型漂移
+  （P06 提取方差），证明是 extraction 层行为而非下游机制。
+
+### 2.2 候选方案（不改 P16-b gate）
+
+| 方案 | 做法 | 优点 | 风险/代价 |
+|---|---|---|---|
+| **A-1 prompt coverage 增强** | `EXTRACTION_SYSTEM_PROMPT` 增补裸角色称谓/亲属称谓抽取指示 + 示例（如 爸爸→顺顺 同型、翠翠的祖父→祖父）；明确「指向具体人物时抽取」 | 直接改善源头覆盖；可回滚；不动判定 | 影响**全部** extraction（A/B 对照必须）；可能提高泛指词输出量（妈妈/儿子…）→ 需 hygiene/generic 兜底核验；老船夫/祖父 等 epithet 需 A/B 跟踪（见 §4） |
+| **A-2 零代码量化监控** | lineage + `diagnose_lineage --all` 已可输出「未提取 mention 清单」；每轮评估报告固定输出覆盖统计 | 零代码；立即可用 | 不修复覆盖，仅量化 |
+| **A-3 二段式补抽** | 对未提取的候选 mention 二次询问 | 精准补漏 | **增加 LLM 调用**，违反「零额外调用」约束 → 排除/远期 |
+
+---
+
+## 3. B（D5-b）：LLM generic 标签在 judge-null fallback 路径不一致
+
+### 3.1 精确 fallback 路径（resolver.py）
+
+```
+judge 返回 resolves_to=null
+  → _apply_judge  null 分支：
+      if r.resolves_to is None and classify_mention(r.mention) == MentionCategory.GENERIC:
+          continue            # ← 只查 hygiene 词表（_RELATIONAL_GENERIC_WORDS：兄弟/哥哥/弟弟/…）
+      if r.resolves_to is None:
+          self._register_or_unresolved(r.mention)   # 母亲：classify_mention(母亲)=None（不在词表）→ 走到这里
+  → _register_or_unresolved(母亲):
+      cat = self._category_of(母亲) = GENERIC（LLM 标注）   # 非 DESCRIPTIVE/COMPOSITE
+      → 不 unresolved → _register_mention(母亲)
+  → _register_mention(母亲): BODY → _register(母亲) → canonical（known["母亲"]="母亲"，mc=7）
+```
+
+### 3.2 根因：两处 effective-category 判定不一致
+
+- `_resolve_name`（无候选分支）用 **effective category**：`hy_cat = classify_mention(name)`；
+  `cat = GENERIC if hy_cat==GENERIC else self._category_of(name)` → **LLM generic 被尊重**
+  （`if cat == GENERIC: generic_filtered++; return name, False` 丢弃）。本轮 父亲（LLM generic、
+  无候选）即由此丢弃 ✓。
+- `_apply_judge`（judge-null 分支）**只查 hygiene 词表**（`classify_mention`），不查 LLM category →
+  LLM generic + judge null → 仍注册。本轮 母亲（LLM generic、有候选 → judge null）即由此注册 ✗。
+- 历史原因：RC3（V0.2.4-b）刻意「只信词表不信 LLM category」（P09 教训），但该原则只落实在
+  `_resolve_name`/无候选路径，**漏了 judge-null 路径**——两处语义漂移。
+
+### 3.3 附带输出泄漏（B-1 必须一并处理）
+
+- resolve() 尾部的输出剔除集合同样只查 hygiene 词表：
+  `dropped = {p.mention for p in pending if p.mention not in self.known and classify_mention(p.mention)==GENERIC}`
+- 即使 B-1 在 null 分支跳过注册，母亲 不在 known、又不在 dropped → **以原名残留在 resolved_chars** →
+  `merge_extractions` 仍会为它建 Person 节点（merger 对 characters 内任何名字建 PersonAgg）。
+- 因此 B-1 修复必须同步：null 分支跳过时显式 `self._chunk_dropped.add(r.mention)`（或把 dropped 条件
+  对齐 effective category），否则只是「不注册但仍入图」，验收无法闭环。
+
+### 3.4 候选方案（不改 P16-b gate）
+
+| 方案 | 做法 | 影响 | 风险/代价 |
+|---|---|---|---|
+| **B-1（推荐，最小侵入）** | `_apply_judge` null 分支改用与 `_resolve_name` 一致的 effective category（hygiene 词表 OR LLM generic → 丢弃不注册）+ dropped/`_chunk_dropped` 对齐防输出泄漏 | 母亲 类不再碎片化（V0.2.5/6 母亲 canonical mc=6/7 → 新行为 dropped）——**行为变更需评估声明 + 新单测** | 纯 resolver 内部一致性；不动 gate/prompt/schema；见 §4/§5 影响面 |
+| **B-2 扩 hygiene 词表**（母亲/爸爸/父亲 入 `_RELATIONAL_GENERIC_WORDS`） | — | 母亲 类直接走词表 GENERIC | **P16/P018 Do Not Reopen 明确禁止**（「不把 父亲/母亲/祖父 加入 generic 词表」）→ 排除 |
+| **B-3 保持现状 + 文档化** | 继续注册，lineage 量化 | 母亲 持续碎片化 | 信息损失继续（与 P16-b「首次信息损失」trade-off 同哲学，可接受则选） |
+
+---
+
+## 4. 对 老船夫 等合法 PERSON/epithet 的影响
+
+| 方案 | 是否影响 老船夫 / 祖父 / 顺顺 等合法 PERSON/epithet |
+|---|---|
+| **B-1** | **不影响**。老船夫 本轮 14 次 entry 的 category 为 person/descriptive/None，**从未被 LLM 标 generic**；其分裂（chunk4 judge null → null_registered → first-seen 锁定，mc=14 未吸收进 祖父）是 **P06/P08 judge 方差 + 零重合召回**域，独立处理，与 B-1 无交集 |
+| **A-1** | **可能影响（全局 prompt）**：必须 A/B 对照跟踪 老船夫/祖父/顺顺 的 category 分布与吸收路径，确认 epithet 仍走 judge→祖父 而非新碎片化（本轮老船夫 已分裂，A/B 需确认不恶化） |
+| **B-2** | 会直接误伤（父亲/母亲/祖父 若入词表，合法 alias 路径被切断）→ 已排除 |
+
+---
+
+## 5. 对 207 + 15 regression 的影响
+
+| 方案 | 影响 | 依据 |
+|---|---|---|
+| **B-1** | **预计 0 回归**，但需全量验证 + 补新用例 | 现有 GENERIC 测试全部使用**词表词**（弟弟/哥哥/兄弟 → `classify_mention=GENERIC`，null 分支已跳过）或 judge-pass 路径（年青人→alias）；**无任何用例锁定「LLM generic（非词表）+ judge null → 注册」**（grep 已核：test_resolver_descriptive.py T-b10、test_hygiene.py RC3 组、test_role_policy.py M10 均为词表词）。补：母亲 型用例（LLM generic + judge null → 丢弃 + 输出剔除） |
+| **A-1** | unit 不受影响（mock `FakeHttpClient` 固定响应，不感知 prompt 语义）；需核查 `test_llm_client.py` 无 prompt 内容断言（预计无） | prompt 变更只影响真实 LLM 输出 → 真实 A/B 单独评估 |
+| **A-2 / B-3** | 零代码 → 零影响 | — |
+
+---
+
+## 6. 最小侵入实施顺序（评审通过后执行；本设计不实现）
+
+```text
+Step 1  B-1（确定性机制修复，先行）
+        ① _apply_judge null 分支：effective category 对齐（hygiene 词表 OR LLM generic → 丢弃）
+        ② dropped/输出剔除对齐（或 null 分支显式 _chunk_dropped.add）防输出泄漏
+        ③ 单测：母亲 型（LLM generic + judge null → 不注册 + 输出剔除）+ 词表 generic 回归不变
+        ④ 全量 unit 225 + integration 15；真实《边城》ER_LINEAGE=1 重跑，lineage 前后对照 母亲 行为
+        （canonical → dropped）与四案例不回归
+        理由：不依赖 LLM 行为、可单测、影响面可控 → 先收敛机制缺口
+
+Step 2  A-1（prompt coverage，需真实 A/B）
+        ① EXTRACTION_SYSTEM_PROMPT 增补裸角色称谓/亲属称谓抽取指示 + 示例（爸爸→顺顺 同型、
+           翠翠的祖父→祖父）
+        ② 同一 EPUB 两次 ingest（原 prompt vs 新 prompt）用 lineage 对比：
+           category 分布 / 爸爸·大儿子一族·翠翠的祖父 覆盖 / 老船夫·祖父·顺顺 epithet 不回归
+        ③ A/B 通过 → 固化 prompt + 评估报告；不通过 → 回退，维持 A-2 监控
+        理由：依赖真实 LLM 方差，必须 A/B 决策，后置
+
+Step 3  A-2（全程监控）
+        lineage「未提取 mention 清单」作为每轮评估报告标准输出（工具已具备，零代码）
+
+Step 4  D5 原义（category=None → PERSON fallback）
+        保持 Known Limitation 文档化；若后续真实评估出现「None 首现 + judge null → 碎片化」直接案例，
+        再评估是否收紧（属 P017 D2 trade-off 决策，另立评审）
+```
+
+## 7. 验收（v2 的 Done 定义，评审通过后执行）
+
+1. **D5-b**：母亲 型（LLM generic + judge null）→ 不注册 canonical + 输出剔除；词表 GENERIC
+   （哥哥/弟弟/兄弟）与 judge-pass 路径（年青人）行为不变；unit 225+新增 / integration 15 全绿；
+   真实《边城》重跑 lineage 对照 母亲 由 canonical → dropped，四历史案例归层不回归。
+2. **D5-a**：A/B 对照给出 爸爸/大儿子一族/翠翠的祖父 的覆盖前后对比与 epithet 不回归证据；
+   决策（固化 prompt / 回退 / 保持监控）有记录。
+3. 不修改 P16-b gate（`_role_alias_decision` 与 evidence 机制零接触）；不扩 generic 词表；
+   不引入 classifier；不增加 LLM 调用（A-3 排除）。
+4. 每轮评估报告固定输出「未提取 relational/generic mention 清单」（A-2）。
+
+## 8. Do Not（v2 追加）
+
+- 不因 翠翠的祖父（EXTRACTION_LAYER 定案）修改 resolver/gate——其修复面在 extraction coverage（D5-a）。
+- 不把「爸爸 category=None/PERSON 绕过 gate」当当前事实引用（仅限 V0.2.6 历史推断；Task B 决策以
+  lineage 直接观测为准）。
+- 不把 D5-a 与 D5-b 混为一个修复（机制/修复面/验收独立）。
+- 不在本设计评审前写任何修复代码。
+
+---
+
+## 附录：v1（2026-08-27，已被 v2 取代；保留历史，不覆盖）
+
+> 以下为 v1 全文。v1 的「爸爸 category=None/PERSON」与「翠翠的祖父 归 P06」假设已被 §0 修正；
+> v1 候选方案 A（prompt 增强）/ B（结构补标）/ C（保持现状）/ D（二段式）在 v2 中对应
+> A-1 / （未保留：结构补标依赖 category=None 前提，v2 无直接案例，移出本轮）/ B-3 / A-3。
+
+### v1 原文
+
 # Task B：P017 D5 问题边界与候选方案 — extraction classification coverage
 
 - **日期**: 2026-08-27
@@ -91,3 +272,5 @@ Step 4  若缺口占比低 / 修复成本高 → 方案 C（Accepted Limitation 
 - 不修改 P16-b gate（冻结）。
 - 不引入 classifier / 不扩词表 / 不把 category=None 一刀切当 DESCRIPTIVE。
 - 不把单次真实评估的 category 推断当事实（先上 Task A 拿直接证据）。
+
+### （v1 原文结束）
