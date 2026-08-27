@@ -173,11 +173,16 @@ def test_descriptive_with_candidate_goes_to_judge():
     assert "翠翠的祖父" in r.canonical_aliases["祖父"]
 
 
-def test_descriptive_no_candidate_allowed_canonical():
-    """DESCRIPTIVE 无候选 → 允许注册 canonical（不静默丢人物）。"""
+def test_descriptive_no_candidate_unresolved():
+    """V0.2.5-b：DESCRIPTIVE 无候选 → deferred → unresolved（不注册、不进 known、输出剔除）。
+
+    取代 V0.2.4 旧语义「无候选允许注册 canonical（不静默丢人物）」（P017 D2 有意决策）。
+    """
     r = EntityResolver(judge=judge_null)
     out, _ = r.resolve(make_chunk(1), extraction(["翠翠的祖父"], {"翠翠的祖父": MentionCategory.DESCRIPTIVE}))
-    assert r.known.get("翠翠的祖父") == "翠翠的祖父"
+    assert "翠翠的祖父" not in r.known
+    assert out.characters == []
+    assert r.hygiene_stats["descriptive_unresolved"] == 1
 
 
 def test_composite_with_candidate_goes_to_judge():
