@@ -6,7 +6,8 @@ services:
       - "7474:7474"
       - "7687:7687"
     environment:
-      NEO4J_AUTH: neo4j/12345678
+      # 本地开发默认；公开部署请通过环境变量覆盖
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/12345678}
     volumes:
       - neo4j_data:/data
 

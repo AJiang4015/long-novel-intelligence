@@ -1,54 +1,153 @@
-# 长篇小说知识图谱分析系统 V0.1
+# 长篇小说人物关系知识图谱分析系统
 
-上传 EPUB 小说 → 选择人物 → 查看该人物的 1 跳人物关系网络。
+> 基于 **LLM + Entity Resolution + Neo4j** 的长篇小说人物关系分析系统：上传 EPUB，自动抽取人物与关系，把同一个人物的不同称谓合并为统一实体，构建可查询、可可视化的人物关系图谱，并附一套可重复执行的 regression evaluation 框架。
 
-## 启动
+---
 
-1. `cp .env.example .env`，填写 `BAILIAN_API_KEY`（阿里百炼 API Key）；如修改了 Neo4j 密码需同步 `.env`
-   - LLM 使用阿里百炼：`BAILIAN_URL`（OpenAI 兼容地址，默认 `https://dashscope.aliyuncs.com/compatible-mode/v1`）、`BAILIAN_MODEL`（默认 `qwen3.7-max-2026-05-17`）
-2. 启动 Neo4j：
-   - **远程部署（本项目实际使用）**：VM 192.168.127.101 上 `/root/novel-project/docker-compose.yml` 的独立 `novel-neo4j` 实例（neo4j:5.26.0，端口 7474/7687，密码 `12345678`，数据卷 `novel_neo4j_data`，与任何其他项目完全隔离）
-   - 本机 Docker 备用：`docker compose up -d neo4j`（仓库 compose 与远程实例配置一致）
-   - `.env` 的 `NEO4J_URI` 指向实际实例：`bolt://192.168.127.101:7687`（本机部署则 `bolt://localhost:7687`）
-3. 后端：`cd backend && pip install -e ".[dev]" && uvicorn app.main:app --reload --port 8000`
-   - 若本机 pip 不可用（如沙箱环境），依赖可手动解包到 `backend/.deps`，运行前设置 `$env:PYTHONPATH='backend\.deps'`
-4. 前端：`cd frontend && npm install && npm run dev`（访问 http://localhost:5173）
+## 核心能力（均为已实现能力）
 
-## 测试
+- **EPUB 小说解析**：章节结构解析 + 正文/版权/题记/推广分类（非正文不污染实体）
+- **chunk pipeline**：按 `CHUNK_SIZE / OVERLAP` 确定性切块，chunk_id 全局递增
+- **LLM extraction**：每 chunk 抽取人物 + 关系 + 类别标注（阿里百炼 / 任意 OpenAI 兼容 endpoint）
+- **Entity Resolution**：candidate recall → LLM judge → admission → registration 的整本消歧（canonical 首现锁定，不重选）
+- **alias merge**：零共享字别名（`天保 ↔ 大老`、`傩送 ↔ 二老`）跨 chunk 合并为统一 canonical
+- **角色称谓准入控制**：`X的Y` qualified / 裸称谓 bare 的证据门槛（≥2 独立证据 → confirmed）
+- **Neo4j 图谱**：`Novel / Person / RELATES_TO` 三结构，novel_id 双层隔离，单事务写入
+- **React 可视化**：上传 → 后台分析 → 人物搜索 → SVG 关系图 → 关系证据（原文片段）展示
+- **checkpoint / resume**：中断后重传同一文件自动续跑，已完成阶段**零重复 LLM 调用**（幂等）
+- **evaluation framework**：23→24 条声明式检查（checkset v2）+ 真实 LLM 基线 + stable/variance 经验分类 + baseline validity
 
-- 单元测试（无需 Neo4j / 真实 LLM）：`cd backend && pytest`
-- 集成测试（需 Neo4j 运行中）：`cd backend && pytest -m integration`
+## 系统架构
+
+```text
+┌─ Frontend（React + Vite + TypeScript）────────────────────────────┐
+│ App 阶段机（上传→轮询 job→图展示）；GraphCanvas 自绘 SVG 关系图      │
+└──────────────┬────────────────────────────────────────────────────┘
+               │ REST（/api/...）
+┌─ Backend（FastAPI，单进程）───────────────────────────────────────┐
+│ api/novels.py  _run_ingest（BackgroundTasks 后台 job）              │
+│   EPUB → sections → chunker → extractor(LLM) → hygiene            │
+│       → resolver(recall→judge→admission→registration) → merger    │
+│       → db/neo4j（最终图单事务）                                    │
+│ checkpoint/（durable recovery state，P19）│ models/job（进程内句柄） │
+│ tools/eval_framework（regression evaluation，P20）                 │
+└──────────────┬────────────────────────────────────────────────────┘
+               │ bolt://
+        Neo4j 5.26（独立容器，仅 Novel/Person/RELATES_TO）
+```
+
+**ingest pipeline 流程图**：
+
+```text
+EPUB ─→ 章节分类 ─→ 切块 ─→ LLM 抽取（人物+关系+类别）
+  ─→ 确定性硬过滤（集合/泛指词）─→ 消歧（召回候选 → judge → 准入 → 注册）
+  ─→ 跨 chunk 合并（bridge evidence + merge judge）─→ Neo4j 写库 ─→ API/前端
+```
+
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| Backend | FastAPI · Python 3.13 · Neo4j 5.26（Driver）· 阿里百炼 LLM API（OpenAI 兼容） |
+| Frontend | React · TypeScript · Vite · 自绘 SVG GraphCanvas |
+| Infrastructure | 文件 checkpoint（resume/幂等）· lineage 观测（全层事件）· evaluation framework（checkset + baseline） |
+
+## Demo 流程
+
+```text
+上传 EPUB（.epub ≤50MB）
+  → 后台分析（前端轮询 job 进度；失败可续跑）
+  → 搜索人物（按名/别名模糊搜索）
+  → 查看人物 1 跳关系图（SVG）
+  → 点击关系边查看证据（原文 chunk + 章节定位）
+```
+
+## 项目亮点（面试重点）
+
+1. **Entity Resolution 而非简单 NER**：同一个人物的姓名/别名/角色称谓在整本书中跨 chunk 归并为单一 canonical；canonical 首现锁定保证确定性，judge 判定 + evidence 门控收敛精度。
+2. **lineage 可观测**：extraction → recall → judge → admission → registration → merge 全层事件旁路记录（默认关零开销），任何质量失败可**归因到具体决策层**，不凭经验改代码。
+3. **checkpoint / resume**：内容/配置/输入三层指纹 + manifest 两态；中断重传同文件自动续跑，已完成阶段零重复 LLM 调用；幂等重传不浪费 token。
+4. **evaluation framework**：真实 LLM 基线 + 经验分类（stable/variance 与 correctness **解耦**）+ baseline validity——**稳定失败不会被冻结为"正常基线"**（`INVALID_NOT_REGRESSION_SAFE` 如实暴露质量问题）。
+5. **failure handling**：LLM 限流/超时/形状不合规分类处理、重试语义、checkpoint 写失败降级（不浪费已完成 LLM 工作）、评估侧失败 chunk 自动降级（G4）。
+
+## Known Limitations（诚实清单）
+
+- **extraction coverage 模型边界**：部分角色称谓/低显著性 mention（如 `爹爹`、`老二`）在 flash 类模型下存在漏提（有 lineage 证据，归因为 extraction 层，见 `docs/problems/P017`）；产品验收边界：单次低显著性 mention 不要求稳定覆盖（D-19）。
+- **当前 baseline = `INVALID_NOT_REGRESSION_SAFE`**：checkset `C3`（爹爹 ∈ 顺顺.aliases）为稳定失败——框架如实报告该质量问题并**禁止**将其冻结为正常回归基线；这不是缺陷，而是评估框架设计的诚实输出。
+- **单次运行成本**：一次《边城》分析约 10-15 分钟真实 LLM 调用（judge 阶段串行为耗时瓶颈），token 成本与模型档位相关。
+- **评估语料范围**：质量基线与检查集基于《边城》单语料验证；词表/章节分类/检查期望均为项目级规则，换语料需重新评估（见 D-7/D-16/D-19）。
+- **关系语义**：关系为有向边，方向表示抽取时主体 → 客体；`weight` = 确认该关系的不同 chunk 数。
+
+## 本地运行
+
+**环境要求**：Python 3.13+ · Node 18+ · Docker（Neo4j）· 阿里百炼 API Key（或任意 OpenAI 兼容 endpoint）
+
+```bash
+# 1. Neo4j（本地开发默认 neo4j/12345678，可用 NEO4J_AUTH 覆盖）
+docker compose up -d
+
+# 2. 配置（.env 已被 gitignore）
+cp backend/.env.example backend/.env
+#    编辑 backend/.env：填写 BAILIAN_API_KEY（必填）、按需改 NEO4J_URI/模型
+
+# 3. 后端
+cd backend && pip install -e ".[dev]"
+uvicorn app.main:app --port 8000
+
+# 4. 前端（访问 http://localhost:5173）
+cd frontend && npm install && npm run dev
+```
+
+**测试**：
+
+```bash
+cd backend
+pytest                  # unit（全 mock，无网络/Neo4j）
+pytest -m integration   # integration（需 Neo4j 运行中）
+```
+
+**真实评估（可选）**：
+
+```bash
+cd backend
+python -m backend.tools.eval_framework.runner --dry-run    # 前置校验
+python -m backend.tools.eval_framework.runner --smoke      # mock LLM 自检
+python -m backend.tools.eval_framework.runner --runs 1     # 1 次真实 ingest 评估
+```
+
+> 语料：`books/` 已被 gitignore；放入《边城》（沈从文，公版）EPUB 可复现内置基线（checkset 钉死其 content_hash，语料变化会显式 REFUSE）。评估框架用法见 `backend/tools/eval_framework/README.md`。
+
+## 项目演进
+
+```text
+V0.2.x  核心 ER 链路成型（消歧/合并/准入）
+P16-a   非正文污染治理 → 已解决并验证
+P16-b   角色称谓准入（role gate）→ 机制验证，冻结
+P17     描述性碎片化修复（deferred / unresolved 不注册）
+P19     checkpoint / resume（可恢复、幂等、零重复调用）
+P20     evaluation framework（checkset v2 + 真实基线 + validity）
+2026-08 CODE FREEZE（最后一笔：merge_judge payload 修复 MERGE_EVIDENCE_CAP=5）
+```
+
+内部工程文档（问题记录/流程/层契约）随仓库公开，见 `docs/`。
 
 ## API
 
 | 端点 | 说明 |
 |---|---|
-| `POST /api/novels` | 上传 .epub → `{novel_id, job_id}` |
-| `GET /api/jobs/{job_id}` | 任务状态与进度（pending/running/completed/completed_with_errors/failed） |
-| `GET /api/novels/{novel_id}` | 小说元信息（标题、章节、统计） |
-| `GET /api/novels/{novel_id}/characters?q=` | 模糊搜索人物候选 |
-| `GET /api/characters/{character_id}/graph` | 1 跳人物关系子图 |
+| `POST /api/novels` | 上传 .epub → `{novel_id, job_id}`（同文件重传自动续跑） |
+| `GET /api/jobs/{job_id}` | 任务状态与进度 |
+| `GET /api/novels/{novel_id}` | 小说元信息（标题/章节/统计） |
+| `GET /api/novels/{novel_id}/characters?q=` | 人物模糊搜索 |
+| `GET /api/characters/{character_id}/graph` | 人物 1 跳关系子图 |
 | `GET /api/health` | 健康检查（含 Neo4j 连通性） |
-
-## 已知限制
-
-> **Job state is process-local（V0.1 决策）and will be replaced by a persistent task store in later versions.**
-
-- 人物消歧质量取决于抽取与判定（LLM 非确定性）：真实评估结论见 `docs/evaluation/`，已知问题见 `PROBLEM.md` / `docs/problems/`
-- 关系为有向边，方向仅表示抽取时的主体 → 客体
-- weight = 确认该关系的不同 chunk 数；confidence = 各确认 chunk confidence 的算术平均
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
-| `AGENTS.md` | Agent 必须遵守的硬规则（宪法） |
-| `PROCESS.md` | 项目流程 / 实验纪律 / 验收顺序 |
-| `DECISIONS.md` | 已做出的架构 / 工程决策 |
-| `ARCHITECTURE.md` | 系统结构与数据流 |
-| `PROBLEM.md` | 问题地图 + 诊断路由（`docs/problems/` 为完整记录） |
-| `TESTING.md` | 测试与真实评估规范 |
-| `DESIGN.md` | UI/UX Design System |
-| `backend/app/*/*_LAYER.md` | 各层契约与边界 |
-
-> 后端分层：`api`（HTTP 编排）/ `db`（Neo4j）/ `models`（任务状态机）/ `pipeline`（抽取·消歧·合并·观测）/ `schemas`（契约）。
+| `docs/ARCHITECTURE.md` | 系统架构与依赖方向（即 `ARCHITECTURE.md`） |
+| `docs/DECISIONS.md` | 架构/工程决策记录（D-1..D-19） |
+| `docs/TESTING.md` | 测试与真实评估规范 |
+| `docs/TECHNICAL_MAP.md` | 项目技术知识地图（模块/数据结构/面试要点） |
+| `docs/ROADMAP.md` | 项目最终化路线图 |
