@@ -153,14 +153,14 @@
 
 - **Trigger**: 需要「真实行为验证」的改动（resolver / prompt / hygiene / merger / judge / schema）后的验收环节；需要回答「质量是否回退 / 基线是多少」；P06 归因需要多次运行取趋势
 - **区分**: 本问题 ≠ ER 质量问题（那些是 checkset 检查的对象，属各 PXX）；本问题是**验收机制本身**不可重复、不可比较、无基线
-- **当前状态**: ✅ **implemented + 首份真实基线已产出（2026-08-28），P20 收尾完成**。框架：`backend/tools/eval_framework/`（checkset v1 声明式检查集 23 条 + runner/evidence/baseline/report，纯函数判定；PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP；`--dry-run/--smoke/--runs` 已接线，baseline/compare CLI 未接——按 Spec §15 保持现状）。**首份基线（deepseek-v4-flash-0731，3 run 全 completed）：baseline_status = INVALID_NOT_REGRESSION_SAFE**——A1 稳定失败（老二 未并入 傩送，**另立 P021**）；C1/C2/C4（P16-b 核心）3/3 PASS、C2 解除 P16-b 风险（1-run FAIL 属 D5 category 绕过形态，D-10 Known Limitation）、C3/A2 variance、F1 因 merge_judge 6MB 限制恒 INCONCLUSIVE/观察（**沿用 P19 评估发现跟进项，不新建**）；artifact `docs/evaluation/baselines/biancheng-2026-08-28-deepseek-v4-flash-0731.json` + [基线报告](docs/evaluation/2026-08-28-biancheng-quality-baseline.md)。约束全程成立：P19 checkpoint 语义零改动（eval 强制 `er_checkpoint_enabled=False`）、不重开 P16/P17/P18、不进入性能优化、不修改 expectation 适配结果
+- **当前状态**: ✅ **implemented + 首份真实基线已产出（2026-08-28），P20 收尾完成；checkset v2（D-19）基线重建中**。框架：`backend/tools/eval_framework/`（checkset 声明式检查集 24 条（v2） + runner/evidence/baseline/report，纯函数判定；PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP；`--dry-run/--smoke/--runs` 已接线，baseline/compare CLI 未接——按 Spec §15 保持现状）。**首份基线（v1，deepseek-v4-flash-0731，3 run 全 completed）：baseline_status = INVALID_NOT_REGRESSION_SAFE**（A1 稳定失败——`老二` 漏提，经 D-19 产品决策收敛：单次低显著性 mention 不要求覆盖，老二 降 checkset v2 观察项 A7，A1 收敛为核心 gate 傩送/二老）；C1/C2/C4（P16-b 核心）v1 3/3 PASS、F1 因 merge_judge 6MB 限制恒 INCONCLUSIVE/观察（沿用 P19 跟进项）；v1 artifact `docs/evaluation/baselines/biancheng-2026-08-28-deepseek-v4-flash-0731.json`（历史保留）+ [v1 基线报告](docs/evaluation/2026-08-28-biancheng-quality-baseline.md)。约束全程成立：P19 checkpoint 语义零改动（eval 强制 `er_checkpoint_enabled=False`）、不重开 P16/P17/P18、不进入性能优化、不修改 expectation 适配结果（v2 是显式验收边界决策 D-19，非降级 hack）
 - → [P020 完整记录](docs/problems/P020-evaluation-framework.md) / [P20 Design Spec](docs/superpowers/specs/2026-08-28-p020-evaluation-framework-design.md)
 
 ### P21 — 《边城》正向合并：老二 未并入 傩送 aliases（deepseek 稳定失败）
 
 - **Trigger**: 真实评估中 A1（正向 1 组：傩送/二老/老二 合并）FAIL；P20 基线 INVALID（stable failure）
 - **区分**: 本问题 ≠ P20 framework 问题（P20 只是暴露源）；≠ canonical 分裂（单一 canonical 已实证）；归因待 lineage Task A（extraction coverage vs judge vs recall，D-11）
-- **当前状态**: 🔍 **investigating（2026-08-28 立项；Task A 归因已完成）**——3-run baseline 实证 `A1 FAIL×3` → stable failure → P20 基线 INVALID。**归因结论：`EXTRACTION_LAYER`（D5-a 形态，P017 域）**——`老二` 全文仅 1 次出现（chunk15/ch13「有人羡慕二老得到碾坊，也有人羡慕碾坊得到老二！」），deepseek 漏提（该 chunk 提取 27 角色含 傩送/二老 但不含 老二）；lineage JSONL 老二 零出现、recall/judge/registration 无事件（机制完好，排除 P06/P08）。修复方向与 P017 D5-a 同域（prompt A/B 已证边际收益有限 `cd52844`），候选：接受 Known Limitation（模型域）/ 换模型评估，**决策待用户拍板**。**不在 P20 内修复**；F1（merge 6MB）沿用 P19 跟进
+- **当前状态**: ✅ **已收敛（2026-08-28，产品决策 D-19）**——Task A 归因完成：`EXTRACTION_LAYER`（D5-a 形态，P017 域）——`老二` 全文仅 1 次出现（chunk15/ch13 反说俏皮话），deepseek 漏提（同 chunk 27 角色含 傩送/二老 不含 老二；lineage JSONL 老二 零出现、recall/judge/registration 无事件）。**产品验收边界（D-19）：单次低显著性 mention 不要求稳定覆盖** → 接受边界不修复；checkset v2：A1 收敛为核心 gate（傩送/二老），老二 降 A7 观察项（OBSERVATION 不判败）；不实施模型探针/结构规则/任何 pipeline 修改。针对 v2 重建 3-run 基线（若 A1 仍 FAIL 则为真实核心合并回归信号）
 - → [P021 完整记录](docs/problems/P021-alias-merge-er-lao-er.md)
 
 ---

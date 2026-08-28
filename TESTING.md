@@ -61,10 +61,12 @@
 
 | 组 | 人物 | 期望 |
 |---|---|---|
-| 正向 1（零共享字，靠同 chunk 共现） | `傩送` / `二老`（+`老二`） | 归并为同一 canonical，aliases 含其余名 |
+| 正向 1（零共享字，靠同 chunk 共现） | `傩送` / `二老` | 归并为同一 canonical，aliases 含 二老 |
 | 正向 2（零共享字） | `天保` / `大老` | 归并为同一 canonical |
 | 正向 3（字符重合） | `老船夫` / `爷爷` / `老人` | 归并为同一 canonical |
 | 负向（明确不同人物） | `傩送` vs `杨马兵`（或 `天保` vs `傩送`） | **必须不合并** |
+
+> **验收边界（D-19，2026-08-28）**：**单次、低显著性 mention 不要求稳定覆盖**。`老二`（全文仅 1 次出现的反说昵称，`傩送` 的别名变体）从正向 1 组的**必须满足项**中移除，降为**观察项**（checkset `A7`，OBSERVATION 不判败）——其漏提属 extraction coverage 模型能力边界（P021，Task A 已归因），不是 correctness FAIL。核心 gate 由 傩送/二老 归并承载（checkset `A1`）。
 
 验证项：
 
@@ -75,11 +77,11 @@
 - relationship 数量
 - **搜索 alias 只返回对应 canonical**：`GET /api/novels/{novel_id}/characters?q=二老` → 命中且 name 为「傩送」；不允许同时返回两个「人物」
 
-> **P20 可执行化**：本节期望已编码为 checkset（`backend/tools/eval_framework/checks.py` 的 `CHECKSET_V1`，检查 id A1-A6 对应本节各组；§9.1 指标编码为 B-G 组）。**数据库验收的正式执行入口见 §5**（由 eval_framework 取代手工 Cypher）；本节仍是检查期望的事实来源，修改期望须走 P20 checkset 版本管理（P020 Spec §4.2）。
+> **P20 可执行化**：本节期望已编码为 checkset（`backend/tools/eval_framework/checks.py` 的 `CHECKSET_V2`，检查 id A1-A7 对应本节各组；§9.1 指标编码为 B-G 组；v2 = D-19 验收边界修订）。**数据库验收的正式执行入口见 §5**（由 eval_framework 取代手工 Cypher）；本节仍是检查期望的事实来源，修改期望须走 P20 checkset 版本管理（P020 Spec §4.2 / DECISIONS D-19）。
 
 ## 5. 数据库验收（禁止只看前端）
 
-> **正式执行入口（P20）**：数据库验收由 `backend/tools/eval_framework/` 执行——runner 采集 Neo4j 稳定键快照（`_graph_snapshot`）+ `checks.evaluate_checkset(CHECKSET_V1)` 自动判定（检查 id A1-G5，判定分类 PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP），报告由 `report.py` 按 §9 模板自动生成。**手工 Cypher 不再作为验收主流程**，仅保留为人工复核/深挖手段（用法见 `backend/tools/eval_framework/README.md`）。单次真实评估不构成结论（§3 非确定性声明），需多次运行取趋势或与基线比较。
+> **正式执行入口（P20）**：数据库验收由 `backend/tools/eval_framework/` 执行——runner 采集 Neo4j 稳定键快照（`_graph_snapshot`）+ `checks.evaluate_checkset(CHECKSET_V2)` 自动判定（检查 id A1-A7 + B-G，判定分类 PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP），报告由 `report.py` 按 §9 模板自动生成。**手工 Cypher 不再作为验收主流程**，仅保留为人工复核/深挖手段（用法见 `backend/tools/eval_framework/README.md`）。单次真实评估不构成结论（§3 非确定性声明），需多次运行取趋势或与基线比较。
 
 禁止只通过前端关系图判断 Entity Resolution 成败。必须**直接查询 Neo4j** 并保存关键结果（以下查询与 runner 的 `_graph_snapshot` 等价，供人工复核/深挖使用）：
 
@@ -141,7 +143,7 @@ RETURN p.name, p.aliases;
 
 > **评估报告声明（强制）**：报告标题与顶部必须注明「本报告是 XX 版本的验证记录，不是下一轮修复方案；任何后续代码修改需另立设计 / Problem Record」。防止「P17 = PARTIAL」等结论被直接当成改代码指令。
 
-> **P20**：`backend/tools/eval_framework/report.py` 自动生成 §9 模板报告（run / baseline / compare 三种），**强制声明语句自动输出**；人工撰写/补充的报告仍须遵守本模板与声明。模板与验收指标（§9.1）本身不变——它们是 checkset 的期望来源（`checks.py` `CHECKSET_V1`，修改期望须 bump checkset_version）。
+> **P20**：`backend/tools/eval_framework/report.py` 自动生成 §9 模板报告（run / baseline / compare 三种），**强制声明语句自动输出**；人工撰写/补充的报告仍须遵守本模板与声明。模板与验收指标（§9.1）本身不变——它们是 checkset 的期望来源（`checks.py` `CHECKSET_V2`，修改期望须 bump checkset_version，见 D-19）。
 
 ```markdown
 # ER Evaluation Report — <小说名>（<YYYY-MM-DD>）

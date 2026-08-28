@@ -206,6 +206,23 @@
 
 ---
 
+## D-19 — 单次低显著性 mention 不要求稳定覆盖（产品验收边界；P021 收敛）
+
+- **Status**: Accepted（产品决策，2026-08-28；P021 收尾）
+- **Date**: 2026-08-28（P021 Task A 归因完成后由用户拍板）
+- **Context**: P20 首份 3-run 基线暴露 A1 稳定失败——`老二`（`傩送` 的别名变体，反说俏皮话昵称）未成为 alias，导致基线 `INVALID_NOT_REGRESSION_SAFE`。Task A lineage 归因（P021）：**`EXTRACTION_LAYER`（D5-a 形态）**——`老二` 全文仅出现 1 次（chunk15/ch13「有人羡慕二老得到碾坊，也有人羡慕碾坊得到老二！」），deepseek-v4-flash-0731 同 chunk 提取 27 角色（含 傩送/二老）但漏提 `老二`；recall/judge/registration 无事件（机制完好）。P017 D5-a prompt A/B（`cd52844`）已证 prompt 增强对单次低显著性 mention 覆盖增益有限 + descriptive 化风险。
+- **Decision**: **单次、低显著性 mention 不要求稳定覆盖**。`老二` 不再作为正向 1 组的必须满足项（correctness gate），降为**观察项**（checkset `A7`，OBSERVATION 不判败）；核心 gate 由 傩送/二老 归并承载（checkset `A1` 收敛）。**正式验收标准调整，不是把 FAIL 改成 PASS**：
+  1. checkset_version `1 → 2`（CHECKSET_V2）；A1 expectation 收敛（members=傩送/二老，alias_contains=二老），新增 A7 观察检查（attribution=P021 / D-19）；
+  2. 不实施 qwen3.8-max 探针、不实施 deterministic structural alias recall、不修改 extraction prompt / recall / judge / P16-b / 其他 check expectation；
+  3. P21 收敛为「产品决策：接受边界，不修复」，完整证据链保留于 P021；
+  4. 旧版 baseline artifact（checkset v1，INVALID）**保留为历史事实，不覆盖**；针对 checkset v2 重建 3-run 基线。
+- **Reason**: 覆盖单个反说昵称的收益（图中一个别名）远低于 prompt/结构修复的成本与风险（P017 D5-a A/B 实证）；回归门禁的价值在于核心合并/拦截语义（傩送/二老、P16-b 系），不因单次 mention 的模型能力边界而永久失效。
+- **Consequence**:
+  - checkset v2 的 A1 若仍 FAIL → 真实回归信号（傩送/二老 核心合并失守），而非单次 mention 噪声；
+  - `老二` 类案例的漏提记录于 A7（observation），趋势可见但不阻塞基线 validity；
+  - 换更强模型/未来 extraction 策略时，A7 趋势若转好可评估是否升级回核心 gate（需显式决策 + checkset bump）；
+  - 该边界是**项目级验收语义**（D-7/D-16 同哲学：语料相关），换小说语料时需重新评估。
+
 ## 决策索引
 
 | ID | Title | Status |
@@ -228,3 +245,4 @@
 | D-16 | section 分类为项目级启发式 | Accepted |
 | D-17 | P017 D5-b / B-1：generic + judge null 不进 canonical fallback（V0.2.8） | Accepted |
 | D-18 | Checkpoint 是 durable recovery state，Job 是 execution handle（P19） | Accepted |
+| D-19 | 单次低显著性 mention 不要求稳定覆盖（产品验收边界；P021 收敛，checkset v2） | Accepted |

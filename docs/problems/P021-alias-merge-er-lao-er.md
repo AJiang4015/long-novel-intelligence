@@ -1,6 +1,6 @@
 # P021 — 《边城》正向合并：`老二` 未并入 `傩送` aliases（deepseek-v4-flash-0731 稳定失败）
 
-- **Status**: 🔍 **归因完成（2026-08-28，lineage Task A）——`EXTRACTION_LAYER`（D5-a 形态）**：`老二` 未提取（全文仅 1 次出现于 chunk15/ch13，LLM 漏提；recall/judge/registration 链路无事件，机制完好）。修复方向评估中：与 P017 D5-a 同域（prompt A/B 已证边际收益有限，`cd52844`），候选结论 = 接受为 Known Limitation（模型域）或换模型评估
+- **Status**: ✅ **收敛（产品决策 D-19，2026-08-28）**——Task A 归因完成（`EXTRACTION_LAYER` / D5-a 形态）；产品验收边界：**单次低显著性 mention 不要求稳定覆盖** → 接受该边界，**不修复**；A1 的 `老二` 项正式降为 checkset v2 观察项（A7，OBSERVATION 不判败）；不实施模型探针 / structural alias recall / 任何 pipeline 修改；完整证据链保留于本记录
 - **Severity**: High（正向合并基线检查稳定失败 → P20 基线 `INVALID_NOT_REGRESSION_SAFE`，阻塞回归比较）
 - **Domain**: ER 算法 / extraction-recall（P08 域）
 - **Tags**: alias-merge, recall, extraction-coverage, stable-failure, baseline-exposed
@@ -91,13 +91,12 @@ Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / �
 
 ## 13. Correct Approach
 
-修复方向 = **extraction coverage（P017 D5-a 同域）**，候选：
+**产品决策（D-19，2026-08-28）：接受该边界，不实施修复。**
 
-1. **prompt 增强**：参照 P017 D5-a A/B 经验（`cd52844`）——**B 未采纳**，单次低显著性 mention 的覆盖增益有限 + descriptive 化风险；预计对 `老二` 类案例边际收益低；
-2. **接受为 Known Limitation（模型域）**：与 P017 D5-a 结论一致——coverage 缺失归模型提取方差（P06 域）；A1 在换更强模型/未来 extraction 策略时复评；
-3. **换模型评估**：若后续模型对单次 mention 覆盖更好，A1 可能自然转 PASS（届时重建基线验证）。
-
-**不扩 generic 词表（D-7）、不引入 classifier（D-10）、不修改 P16-b（D-6）、不修改 A1 expectation（P20 纪律）**。决策待用户拍板（见 §18 Follow-up 2）。
+- **不实施**：qwen3.8-max 模型探针、deterministic structural alias recall、extraction prompt 修改、recall/judge/P16-b 任何改动；
+- **正式验收标准调整**（非"把 FAIL 改成 PASS"）：checkset_version `1 → 2`（CHECKSET_V2）——A1 收敛为核心 gate（傩送/二老 归并），`老二` 移入 **A7 观察检查**（`observation_if_person`，OBSERVATION 不判败、不参与 baseline validity）；TESTING.md §4 正向 1 组同步；
+- 依据：P017 D5-a prompt A/B（`cd52844`）——prompt 增强对单次低显著性 mention 覆盖增益有限 + descriptive 化风险；图中单个反说昵称别名的收益不抵修复成本/风险；
+- 若未来换更强模型或 extraction 策略：A7 观察趋势转好时，可评估将 老二 升级回核心 gate（**需显式决策 + checkset bump**，禁止静默）。
 
 ## 14. Invariants
 
@@ -119,21 +118,23 @@ Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / �
 
 ## 17. Decision
 
-- **A1 属 ER 质量缺口，不在 P20 内修复**（P20 约束 4：先建立质量基线，不修质量问题）；P20 已收尾，基线 INVALID 状态如实保留；
-- 归因未定前**不做任何代码修改**（D-11）。
+- **D-19 产品决策（2026-08-28，用户拍板）**：**单次、低显著性 mention 不要求稳定覆盖**——`老二`（全文仅 1 次出现的反说昵称）不再作为 correctness gate；接受 extraction coverage 模型能力边界，**不修复**；
+- 落地：checkset v2（A1 收敛核心 gate + A7 观察项）、TESTING.md §4 同步、P20 基线按 v2 重建（旧 v1 基线 artifact 保留为历史）；
+- 本问题**不在 P20 内修复**（P20 已 CLOSED）；无任何 pipeline / prompt / recall / judge / P16-b 修改。
 
 ## 18. Follow-up
 
 1. ✅ **Task A 归因完成**（2026-08-28，lineage run novel `764795aa`）：`EXTRACTION_LAYER` / D5-a 形态（证据见 §8/§9/§10）；
-2. **修复方向决策（待用户拍板）**：prompt 增强（边际收益低，参照 `cd52844`）/ 接受为 Known Limitation（模型域）/ 换模型评估——若接受 Known Limitation，与 P017 D5-a 合并记录（不单独拆 D-12 立项）；
-3. 若采取修复：修复后重跑 3-run baseline → A1 `PASS×3` → P20 基线重建 VALID；
-4. 同批 variance 信号（A2 天保/大老 2/3、C3 爹爹 confirmed 1/3）持续观察，不并入本问题。
+2. ✅ **产品决策落地（D-19，2026-08-28）**：接受边界不修复；checkset v2（A1 收敛 + A7 观察）；TESTING.md §4 / DECISIONS D-19 / 本记录同步；
+3. ✅ 针对 checkset v2 重建 3-run baseline（deepseek-v4-flash-0731，目标 VALID；若 A1 仍 FAIL 则为真实核心合并回归信号）；
+4. 持续观察：A7（老二 吸收趋势）在换模型/未来 extraction 策略时的表现；若显著转好可评估升级回核心 gate（显式决策 + checkset bump）；
+5. 同批 variance 信号（A2 天保/大老、C3 爹爹 confirmed）持续观察，不并入本问题。
 
 ## 19. Current Limitation
 
-- 归因未定（extraction coverage vs judge vs recall）；
-- P20 基线保持 INVALID（A1 修复前不可作回归比较）；
-- 同批基线中的 variance 信号（A2 天保/大老 2/3、C3 爹爹 confirmed 1/3）未达立项标准，持续观察（不并入本问题）。
+- **`老二` 漏提 = 接受的 Known Limitation（D-19）**：单次低显著性 mention 不要求稳定覆盖；记录于 checkset v2 A7（observation 趋势可见），不阻塞基线 validity；
+- 旧 checkset v1 基线保持 INVALID_NOT_REGRESSION_SAFE（历史事实，不覆盖）；v2 基线重建后作为现行回归基准；
+- 同批 baseline 中的 variance 信号（A2、C3）未达立项标准，持续观察。
 
 ## 20. Do Not Reopen
 
