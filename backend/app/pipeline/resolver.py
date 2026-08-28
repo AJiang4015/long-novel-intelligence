@@ -10,6 +10,17 @@ from app.schemas.llm import (AliasCandidate, AliasJudgeResult, ExtractionResult,
 
 RECALL_TOP_K = 5
 
+# merge_judge payload safety/availability（2026-08-28，非性能专项）：
+# 每 canonical pair 送入 merge judge 的桥接证据上限。**独立于 merger.EVIDENCE_CAP**——
+# 两者语义不同：EVIDENCE_CAP 是 RELATES_TO 关系证据（merger 聚合层），
+# MERGE_EVIDENCE_CAP 是 canonical 合并判定的桥接证据（resolver merge 决策层）。
+# 依据：merge_evidence 无上限累积整块 chunk 文本（resolver 每 chunk 旁路收集），
+# 曾致 merge_judge 请求体超 DashScope 6MB / input-length 1M 上限（F1 恒 INCONCLUSIVE）。
+# 截断确定性：evs 按 chunk 处理顺序（chunk_id 升序）收集，只取前 N 条，不做任何采样。
+# 当前《边城》规模下 N=5 足够避免超限；未来 pair 数量显著扩大、整体 request 仍可能
+# 超 provider limit 时，再独立考虑按累计字节/令牌分桶的 batch judge（暂不实现）。
+MERGE_EVIDENCE_CAP = 5
+
 # V0.2.6 P16-b：X的Y 限定式结构（X=锚点候选，Y=核词）
 _ROLE_DE_RE = re.compile(r"^(.{1,4})的(.{1,8})$")
 # 长辈称谓首字（结构规则，仅用于 P16-b bare 触发判定；不改变任何分类、不加入 GENERIC）。
@@ -976,7 +987,7 @@ class EntityResolver:
                 bridge_evidence=[BridgeEvidence(
                     chunk_id=e["chunk_id"], chapter_id=e["chapter_id"],
                     mention=e["mention"], text=e["text"],
-                ) for e in evs],
+                ) for e in evs[:MERGE_EVIDENCE_CAP]],
             ))
 
         stats = {"merge_candidate_pairs": len(pairs_input),

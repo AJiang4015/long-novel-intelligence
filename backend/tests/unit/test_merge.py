@@ -238,3 +238,76 @@ def test_merge_evidence_structure_and_3way_pairs():
     ev = evs[0]
     assert set(ev) >= {"mention", "candidates", "pair", "chunk_id", "chapter_id", "text"}
     assert ev["chunk_id"] == 4
+
+
+# ---- 12. MERGE_EVIDENCE_CAP（2026-08-28，merge_judge payload safety/availability）----
+# 每 canonical pair 送入 merge judge 的桥接证据截断 ≤5；确定性（按 chunk 顺序取前 N，不采样）。
+
+def _inject_merge_evidence(r, pair, n, start_chunk=1):
+    """为同一 pair 注入 n 条 bridge evidence（chunk_id 升序，模拟多 chunk 累积）。"""
+    a, b = pair
+    for i in range(n):
+        r.merge_evidence.append({
+            "mention": "桥", "candidates": [a, b],
+            "pair": [a, b], "chunk_id": start_chunk + i, "chapter_id": 1,
+            "text": f"桥证据第{start_chunk + i}块",
+        })
+
+
+def test_merge_evidence_cap_more_than_5_truncates():
+    r = build_two_canonicals(EntityResolver(judge=judge_null), [6, 9], ["大儿子", "大老"])
+    _inject_merge_evidence(r, ("大儿子", "大老"), 7)   # 7 条（chunk 1..7）
+    judge = _MergeJudge(mapping={frozenset(("大儿子", "大老")): True})
+    out = r.decide_merges(judge)
+    assert judge.calls == 1
+    p = judge.last_input[0]
+    assert len(p.bridge_evidence) == 5                 # 截断到 5
+    # 确定性：保留前 5 条（chunk_id 升序 1..5），不做采样、不破坏顺序
+    assert [e.chunk_id for e in p.bridge_evidence] == [1, 2, 3, 4, 5]
+    assert [e.text for e in p.bridge_evidence] == [f"桥证据第{i}块" for i in range(1, 6)]
+    # merge 语义不变：仍正常合并（截断只影响 payload，不影响判定）
+    assert out["merge_map"] == {"大老": "大儿子"}
+    assert out["stats"]["entity_resolution"]["merged_pairs"] == 1
+
+
+def test_merge_evidence_cap_exactly_5_unchanged():
+    r = build_two_canonicals(EntityResolver(judge=judge_null), [6, 9], ["大儿子", "大老"])
+    _inject_merge_evidence(r, ("大儿子", "大老"), 5)
+    judge = _MergeJudge(mapping={frozenset(("大儿子", "大老")): True})
+    r.decide_merges(judge)
+    assert len(judge.last_input[0].bridge_evidence) == 5
+    assert [e.chunk_id for e in judge.last_input[0].bridge_evidence] == [1, 2, 3, 4, 5]
+
+
+def test_merge_evidence_cap_less_than_5_unchanged():
+    r = build_two_canonicals(EntityResolver(judge=judge_null), [6, 9], ["大儿子", "大老"])
+    _inject_merge_evidence(r, ("大儿子", "大老"), 3)
+    judge = _MergeJudge(mapping={frozenset(("大儿子", "大老")): True})
+    r.decide_merges(judge)
+    assert len(judge.last_input[0].bridge_evidence) == 3
+    assert [e.chunk_id for e in judge.last_input[0].bridge_evidence] == [1, 2, 3]
+
+
+def test_merge_evidence_cap_deterministic():
+    r = build_two_canonicals(EntityResolver(judge=judge_null), [6, 9], ["大儿子", "大老"])
+    _inject_merge_evidence(r, ("大儿子", "大老"), 6)
+    j1 = _MergeJudge(mapping={frozenset(("大儿子", "大老")): True})
+    j2 = _MergeJudge(mapping={frozenset(("大儿子", "大老")): True})
+    r.decide_merges(j1)
+    r.decide_merges(j2)   # 同一输入两次 → 截断一致（decide_merges 纯函数，不修改状态）
+    ids1 = [e.chunk_id for e in j1.last_input[0].bridge_evidence]
+    ids2 = [e.chunk_id for e in j2.last_input[0].bridge_evidence]
+    assert ids1 == ids2 == [1, 2, 3, 4, 5]
+
+
+def test_merge_evidence_cap_mock_judge_receives_expected_payload():
+    r = build_two_canonicals(EntityResolver(judge=judge_null), [6, 9], ["大儿子", "大老"])
+    _inject_merge_evidence(r, ("大儿子", "大老"), 8)
+    judge = _MergeJudge(mapping={frozenset(("大儿子", "大老")): True})
+    r.decide_merges(judge)
+    p = judge.last_input[0]
+    assert len(p.bridge_evidence) == 5
+    # MergePair 契约字段完整不变（chunk_id/chapter_id/mention/text）
+    e = p.bridge_evidence[0]
+    assert e.mention == "桥" and e.text == "桥证据第1块" and e.chapter_id == 1
+    assert p.a.canonical == "大儿子" and p.b.canonical == "大老"
