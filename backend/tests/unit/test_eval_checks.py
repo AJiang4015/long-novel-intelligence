@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from tools.eval_framework.checks import (
-    CHECKSET_V1,
+    CHECKSET_V2,
     CheckDef,
     CheckOutcome,
     CheckSet,
@@ -65,9 +65,9 @@ def stats(*, failed_blocks=(), hygiene=None, merge=None, counts=None):
 
 
 def outcome_for(check_id: str, snapshot: dict, st: dict) -> CheckOutcome:
-    check = CHECKSET_V1.by_id(check_id)
+    check = CHECKSET_V2.by_id(check_id)
     assert check is not None, f"checkset 缺检查 {check_id}"
-    return evaluate_checkset(CHECKSET_V1, snapshot, st)[CHECKSET_V1.checks.index(check)]
+    return evaluate_checkset(CHECKSET_V2, snapshot, st)[CHECKSET_V2.checks.index(check)]
 
 
 # ---------------------------------------------------------------------------
@@ -75,11 +75,12 @@ def outcome_for(check_id: str, snapshot: dict, st: dict) -> CheckOutcome:
 # ---------------------------------------------------------------------------
 
 
-def test_checkset_v1_valid_and_complete():
-    assert validate_checkset(CHECKSET_V1) == []
-    ids = [c.id for c in CHECKSET_V1.checks]
-    # Spec §4.2 检查清单 21 条（A6+B2+C5+D3+D2+E1+F1+G4+... 全量）
-    assert ids == ["A1", "A2", "A3", "A4", "A5", "A6",
+def test_checkset_v2_valid_and_complete():
+    assert validate_checkset(CHECKSET_V2) == []
+    assert CHECKSET_V2.checkset_version == "2"   # v2（D-19：老二 降 observation，A7）
+    ids = [c.id for c in CHECKSET_V2.checks]
+    # Spec §4.2 检查清单 24 条（v2 = v1 23 条 + A7）
+    assert ids == ["A1", "A2", "A3", "A4", "A5", "A6", "A7",
                    "B1", "B2",
                    "C1", "C2", "C3", "C4", "C5",
                    "D1", "D2", "D3",
@@ -88,16 +89,16 @@ def test_checkset_v1_valid_and_complete():
                    "G1", "G2", "G3", "G4", "G5"]
 
 
-def test_checkset_v1_every_check_has_attribution_and_layer():
-    for c in CHECKSET_V1.checks:
+def test_checkset_v2_every_check_has_attribution_and_layer():
+    for c in CHECKSET_V2.checks:
         assert c.attribution, f"[{c.id}] 缺 attribution"
         assert c.layer, f"[{c.id}] 缺 layer"
         assert c.group
 
 
-def test_checkset_v1_corpus_pinned():
-    assert CHECKSET_V1.corpus["name"] == "边城"
-    assert len(CHECKSET_V1.corpus["content_hash"]) == 64  # sha256 hex
+def test_checkset_v2_corpus_pinned():
+    assert CHECKSET_V2.corpus["name"] == "边城"
+    assert len(CHECKSET_V2.corpus["content_hash"]) == 64  # sha256 hex
 
 
 def test_validate_checkset_detects_problems():
@@ -145,10 +146,12 @@ def test_A1_split_fails():
 
 
 def test_A1_missing_alias_fails():
-    snap = snapshot([person("傩送", aliases=["二老"])])
+    # v2（D-19）：A1 核心 gate = 傩送/二老；老二 已移入 A7（observation）
+    snap = snapshot([person("傩送")])
     out = outcome_for("A1", snap, stats())
     assert out.outcome == OUTCOME_FAIL
     assert out.actual["canonical"] == "傩送"
+    assert "二老" in out.reason
 
 
 def test_A1_no_member_skips():
@@ -218,6 +221,31 @@ def test_A6_search_failures():
 
 def test_A6_missing_data_skips():
     assert outcome_for("A6", snapshot(), stats()).outcome == OUTCOME_SKIP
+
+
+# ---- A7（v2，D-19）：老二 观察检查（产品边界：单次低显著性 mention 不要求稳定覆盖）----
+
+
+def test_A7_observation_not_fail():
+    # 老二 未提取/未注册 → OBSERVATION（记录，永不判败）
+    out = outcome_for("A7", snapshot([person("傩送", aliases=["二老"])]), stats())
+    assert out.outcome == OUTCOME_OBSERVATION
+    assert out.actual["person"] is False
+    # 老二 成为独立 Person（未来若发生）→ 仍 OBSERVATION（记录事实，不判败）
+    out2 = outcome_for("A7", snapshot([person("老二")]), stats())
+    assert out2.outcome == OUTCOME_OBSERVATION
+    assert out2.actual["person"] is True
+    # 老二 被吸收为 傩送 alias → OBSERVATION 记录 absorbed_into
+    out3 = outcome_for("A7", snapshot([person("傩送", aliases=["老二"])]), stats())
+    assert out3.outcome == OUTCOME_OBSERVATION
+    assert out3.actual["absorbed_into"] == ["傩送"]
+
+
+def test_A7_is_record_never_decisive():
+    assert CHECKSET_V2.by_id("A7").is_record
+    assert CHECKSET_V2.by_id("A7").attribution == "P021 / D-19"
+    out = outcome_for("A7", snapshot([person("傩送")]), stats())
+    assert not out.is_decisive
 
 
 # ---------------------------------------------------------------------------
@@ -456,7 +484,7 @@ def test_G5_checkpoint_guard():
 def test_g4_degrades_needs_full_corpus_checks():
     snap = snapshot([person("傩送", aliases=["二老"]), person("顺顺")])
     st = stats(failed_blocks=[{"chunk_id": 3, "chapter_id": 3, "error": "x"}])
-    outcomes = evaluate_checkset(CHECKSET_V1, snap, st)
+    outcomes = evaluate_checkset(CHECKSET_V2, snap, st)
     by_id = {o.check_id: o for o in outcomes}
     # A1（needs_full_corpus）→ INCONCLUSIVE（即使快照满足合并）
     assert by_id["A1"].outcome == OUTCOME_INCONCLUSIVE
@@ -469,7 +497,7 @@ def test_g4_degrades_needs_full_corpus_checks():
 
 def test_g4_no_failed_chunks_no_degradation():
     snap = snapshot([person("傩送", aliases=["二老", "老二"])])
-    outcomes = evaluate_checkset(CHECKSET_V1, snap, stats())
+    outcomes = evaluate_checkset(CHECKSET_V2, snap, stats())
     assert {o.check_id: o.outcome for o in outcomes}["A1"] == OUTCOME_PASS
 
 
@@ -479,16 +507,16 @@ def test_g4_structure_checks_g1g3_still_evaluable_on_failed_chunks():
     st = stats(failed_blocks=[{"chunk_id": 3, "chapter_id": 3, "error": "ReadTimeout"}])
     # G1：labels 越界 → 必须 FAIL（而非 INCONCLUSIVE）
     bad_labels = snapshot(labels_used=["Novel", "Person", "Disease"])
-    by_id = {o.check_id: o for o in evaluate_checkset(CHECKSET_V1, bad_labels, st)}
+    by_id = {o.check_id: o for o in evaluate_checkset(CHECKSET_V2, bad_labels, st)}
     assert by_id["G1"].outcome == OUTCOME_FAIL
-    assert "labels_subset" in CHECKSET_V1.by_id("G1").expectation["kind"]
+    assert "labels_subset" in CHECKSET_V2.by_id("G1").expectation["kind"]
     # G3：跨 novel 污染 → 必须 FAIL（而非 INCONCLUSIVE）
     bad_iso = snapshot(novel_ids_seen=["novel-1", "other-novel"])
-    by_id2 = {o.check_id: o for o in evaluate_checkset(CHECKSET_V1, bad_iso, st)}
+    by_id2 = {o.check_id: o for o in evaluate_checkset(CHECKSET_V2, bad_iso, st)}
     assert by_id2["G3"].outcome == OUTCOME_FAIL
     # 干净快照 + 失败 chunk → G1/G3 仍 PASS（对照：A1 这类依赖全语料的检查仍 INCONCLUSIVE）
     clean = snapshot([person("顺顺")])
-    by_id3 = {o.check_id: o for o in evaluate_checkset(CHECKSET_V1, clean, st)}
+    by_id3 = {o.check_id: o for o in evaluate_checkset(CHECKSET_V2, clean, st)}
     assert by_id3["G1"].outcome == OUTCOME_PASS
     assert by_id3["G3"].outcome == OUTCOME_PASS
     assert by_id3["A1"].outcome == OUTCOME_INCONCLUSIVE
@@ -507,7 +535,7 @@ def test_g4_skips_vacuous_before_degradation():
 
 
 def test_evaluate_check_respects_preconditions_directly():
-    check = CHECKSET_V1.by_id("C1")
+    check = CHECKSET_V2.by_id("C1")
     assert evaluate_check(check, snapshot([person("翠翠")]), stats()).outcome == OUTCOME_SKIP
     assert evaluate_check(check, snapshot([person("顺顺")]), stats()).outcome == OUTCOME_PASS
 
@@ -518,7 +546,7 @@ def test_decisive_outcomes_contract():
 
 
 def test_record_checks_never_decisive():
-    for c in CHECKSET_V1.checks:
+    for c in CHECKSET_V2.checks:
         if c.is_record:
             snap = snapshot([person("顺顺")])
             st = stats(hygiene={"descriptive_resolved": 1, "descriptive_unresolved": 1},

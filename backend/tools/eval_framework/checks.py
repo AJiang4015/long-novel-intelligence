@@ -512,17 +512,18 @@ _CORPUS_边城 = {
 _FRAGMENT_NAMES = ("大儿子", "长子", "次子", "第二个儿子")   # P017 ch5b 一族碎片词（TESTING §9.1）
 _FAMILY_MEMBERS = ("天保", "傩送", "大老", "二老")          # ch5b 一族目标 canonical 域
 
-CHECKSET_V1 = CheckSet(
+CHECKSET_V2 = CheckSet(
     schema_version=1,
-    checkset_version="1",
-    applies_to="V0.2.5+（冻结语义集，Spec §4.2）",
+    checkset_version="2",   # v2（D-19，2026-08-28）：A1 老二 降为 observation（A7）——单次低显著性 mention 不要求稳定覆盖
+    applies_to="V0.2.5+（冻结语义集，Spec §4.2）；v2 = 产品验收边界 D-19",
     corpus=_CORPUS_边城,
     checks=(
         # ---- A 正向合并（TESTING.md §4）----
-        CheckDef("A1", "正向合并", "傩送/二老/老二 归并为同一 canonical，aliases 含其余名",
+        CheckDef("A1", "正向合并",
+                 "傩送/二老 归并为同一 canonical，aliases 含 二老（核心 gate；老二 见 A7，D-19）",
                  {"kind": "single_canonical_with_aliases",
-                  "members": ("傩送", "二老", "老二"),
-                  "alias_contains": ("二老", "老二")},
+                  "members": ("傩送", "二老"),
+                  "alias_contains": ("二老",)},
                  outcome_class=_CLASS_VARIANCE, attribution="P08 / D-4", layer="merge"),
         CheckDef("A2", "正向合并", "天保/大老 归并为同一 canonical，aliases 含其余名",
                  {"kind": "single_canonical_with_aliases",
@@ -542,6 +543,10 @@ CHECKSET_V1 = CheckSet(
         CheckDef("A6", "正向合并", "alias 搜索 q=二老 唯一命中 canonical=傩送",
                  {"kind": "alias_search_unique", "q": "二老", "expected_name": "傩送"},
                  outcome_class=_CLASS_VARIANCE, attribution="D-2", layer="registration"),
+        CheckDef("A7", "正向合并",
+                 "老二 → 傩送 吸收观察（产品边界 D-19：单次低显著性 mention 不要求稳定覆盖，记录不判败）",
+                 {"kind": "observation_if_person", "name": "老二"},
+                 outcome_class=_CLASS_OBSERVATION, attribution="P021 / D-19", layer="registration"),
 
         # ---- B 非正文（V0.2.5-a，P016）----
         CheckDef("B1", "非正文", "非正文 canonical 数量 == 0",

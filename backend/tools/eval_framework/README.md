@@ -14,7 +14,7 @@
 
 | 模块 | 职责 | 状态 |
 |---|---|---|
-| `checks.py` | checkset v1（23 条检查 A1-G5）+ 纯函数判定（PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP；前置空洞防；G4 降级） | ✅ Step 1 |
+| `checks.py` | checkset **v2**（24 条检查 A1-A7 + B-G，D-19 修订）+ 纯函数判定（PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP；前置空洞防；G4 降级） | ✅ Step 1（v2 2026-08-28） |
 | `runner.py` | 事实采集/编排（env / corpus / job / Neo4j 快照 / stats / evidence）；CLI：`--runs` / `--smoke` / `--dry-run` | ✅ Step 2（基线/比较 CLI 接线为后续步骤） |
 | `evidence.py` | alias→原文上下文 确定性检索（零 LLM），供人工可解释性复核（P18 纪律） | ✅ Step 2 |
 | `baseline.py` | N 运行聚合 → 经验分类 stable/variance → satisfies_expected → baseline_status → compare（REGRESSION / OBSERVATION / REFUSE_COMPARE） | ✅ Step 3（纯函数；CLI 接线为后续步骤） |
@@ -48,11 +48,11 @@ python -u tools/eval_framework/runner.py --runs 1 --tag <tag>
 - **数据安全**：harness 只读 Neo4j + 自建 novel_id；smoke 自清；真实评估结果默认保留（TESTING.md §7）；清理走 dry-run + `db.delete_novel` 精确删除；
 - 长任务 `python -u` + 后台任务（PROCESS.md 运行纪律）。
 
-## 检查集 v1（23 条，Spec §4.2）
+## 检查集 v2（24 条，Spec §4.2 + D-19 修订）
 
 | 组 | 检查 | 来源 |
 |---|---|---|
-| A 正向合并 | A1 傩送/二老/老二；A2 天保/大老；A3 老船夫→祖父；A4 爷爷→祖父；A5 负向 傩送 vs 杨马兵；A6 alias 搜索 | TESTING.md §4 |
+| A 正向合并 | A1 傩送/二老（核心 gate）；A2 天保/大老；A3 老船夫→祖父；A4 爷爷→祖父；A5 负向 傩送 vs 杨马兵；A6 alias 搜索；**A7 老二 吸收观察（D-19：单次低显著性 mention 不要求稳定覆盖，OBSERVATION 不判败）** | TESTING.md §4 / DECISIONS D-19 |
 | B 非正文 | B1 非正文 canonical=0；B2 provisional 计数 | TESTING.md §9.1 / P016 |
 | C P16-b/P18 | C1 父亲 拦截；C2 翠翠的父亲 拦截；C3 爹爹 confirmed；C4 sink 收敛；C5 爸爸 OBSERVATION（D5，记录不判败） | D-5 / D-6 / P018 |
 | D P17/D-9 | D1 家族碎片收敛；D2 descriptive 计数；D3 碎片不注册 | P017 / D-9 |

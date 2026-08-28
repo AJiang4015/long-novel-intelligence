@@ -93,11 +93,11 @@ def compute_compare_identity(settings, corpus_hash: str) -> dict:
         EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_PROMPT,
         MERGE_JUDGE_SYSTEM_PROMPT, MERGE_JUDGE_USER_PROMPT,
     )
-    from tools.eval_framework.checks import CHECKSET_V1
+    from tools.eval_framework.checks import CHECKSET_V2
 
     return {
         "corpus_hash": corpus_hash,
-        "checkset_version": CHECKSET_V1.checkset_version,
+        "checkset_version": CHECKSET_V2.checkset_version,
         "model": settings.bailian_model,
         "chunk_size": settings.chunk_size,
         "chunk_overlap": settings.chunk_overlap,
@@ -234,7 +234,7 @@ def _run_single(settings, client, db, epub_bytes: bytes, corpus_hash: str,
 
     判定唯一入口 = checks.evaluate_checkset（本函数只采集事实并调用）。
     """
-    from tools.eval_framework.checks import CHECKSET_V1, evaluate_checkset
+    from tools.eval_framework.checks import CHECKSET_V2, evaluate_checkset
     from tools.eval_framework.evidence import collect_alias_contexts
 
     data = _upload(client, epub_bytes, "eval.epub")
@@ -247,7 +247,7 @@ def _run_single(settings, client, db, epub_bytes: bytes, corpus_hash: str,
     snap["checkpoint_dir_exists"] = (Path(settings.er_checkpoint_dir) / novel_id).is_dir()
 
     st = _normalize_stats(job)
-    outcomes = evaluate_checkset(CHECKSET_V1, snap, st)
+    outcomes = evaluate_checkset(CHECKSET_V2, snap, st)
     checks = [{"check_id": o.check_id, "outcome": o.outcome,
                "reason": o.reason, "actual": o.actual} for o in outcomes]
 
@@ -257,7 +257,7 @@ def _run_single(settings, client, db, epub_bytes: bytes, corpus_hash: str,
         "timestamp": _now_iso(),
         "tag": tag,
         "env": _collect_env(settings, db, novel_id),
-        "corpus": {"name": CHECKSET_V1.corpus["name"], "content_hash": corpus_hash},
+        "corpus": {"name": CHECKSET_V2.corpus["name"], "content_hash": corpus_hash},
         "compare_identity": compute_compare_identity(settings, corpus_hash),
         "novel_id": novel_id,
         "job": {"job_id": job_id, "status": job["status"],
@@ -351,12 +351,12 @@ def _run_smoke(settings, epub_bytes: bytes, corpus_hash: str, out_dir: Path, tag
 
 
 def _dry_run(settings) -> int:
-    from tools.eval_framework.checks import CHECKSET_V1
+    from tools.eval_framework.checks import CHECKSET_V2
 
     head, dirty = _git_state()
     print("[dry-run] 前置校验全部通过：")
-    print(f"  checkset v{CHECKSET_V1.checkset_version}（{len(CHECKSET_V1.checks)} 条检查）schema 合法")
-    print(f"  corpus: {CHECKSET_V1.corpus['name']}（path={CHECKSET_V1.corpus['path']}）content_hash 匹配钉死值")
+    print(f"  checkset v{CHECKSET_V2.checkset_version}（{len(CHECKSET_V2.checks)} 条检查）schema 合法")
+    print(f"  corpus: {CHECKSET_V2.corpus['name']}（path={CHECKSET_V2.corpus['path']}）content_hash 匹配钉死值")
     print(f"  er_checkpoint_enabled=False（fresh novel 强制；P19 语义零改动）")
     print(f"  env: model={settings.bailian_model} chunk={settings.chunk_size}/{settings.chunk_overlap} "
           f"concurrency={settings.llm_concurrency} git={head[:8]}{'(dirty)' if dirty else ''}")
@@ -393,26 +393,26 @@ def main(argv=None) -> int:
         print("[eval] REFUSE: er_checkpoint_enabled 必须为 False（eval 强制 fresh novel；P19 语义零改动）")
         return 2
 
-    from tools.eval_framework.checks import CHECKSET_V1, validate_checkset
+    from tools.eval_framework.checks import CHECKSET_V2, validate_checkset
 
-    errs = validate_checkset(CHECKSET_V1)
+    errs = validate_checkset(CHECKSET_V2)
     if errs:
         print(f"[eval] REFUSE: checkset 校验失败: {errs}")
         return 2
 
-    corpus_rel = Path(CHECKSET_V1.corpus["path"])
+    corpus_rel = Path(CHECKSET_V2.corpus["path"])
     epub_path = corpus_rel if corpus_rel.is_absolute() else _REPO_ROOT / corpus_rel
     if not epub_path.is_file():
         print(f"[eval] REFUSE: corpus 不存在: {epub_path}")
         return 2
     epub_bytes = epub_path.read_bytes()
     corpus_hash = _sha256_hex(epub_bytes)
-    if corpus_hash != CHECKSET_V1.corpus["content_hash"]:
+    if corpus_hash != CHECKSET_V2.corpus["content_hash"]:
         print(f"[eval] REFUSE: corpus content_hash 漂移 {corpus_hash[:12]}… ≠ 钉死 "
-              f"{CHECKSET_V1.corpus['content_hash'][:12]}…（检查语料文件是否被改动）")
+              f"{CHECKSET_V2.corpus['content_hash'][:12]}…（检查语料文件是否被改动）")
         return 2
 
-    print(f"[eval] checkset v{CHECKSET_V1.checkset_version} 校验通过；corpus={CHECKSET_V1.corpus['name']} "
+    print(f"[eval] checkset v{CHECKSET_V2.checkset_version} 校验通过；corpus={CHECKSET_V2.corpus['name']} "
           f"content_hash={corpus_hash[:12]}…", flush=True)
 
     if args.dry_run:

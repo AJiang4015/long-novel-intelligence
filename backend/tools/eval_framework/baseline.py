@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from tools.eval_framework.checks import (
-    CHECKSET_V1,
+    CHECKSET_V2,
     DECISIVE_OUTCOMES,
     OUTCOME_FAIL,
     OUTCOME_INCONCLUSIVE,
@@ -104,7 +104,7 @@ def aggregate_runs(runs: Sequence[dict], *, checkset=None, baseline_id: str | No
     """
     if not runs:
         raise ValueError("aggregate_runs 至少需要 1 个 run")
-    cs = checkset if checkset is not None else CHECKSET_V1
+    cs = checkset if checkset is not None else CHECKSET_V2
 
     first_ci = dict(runs[0].get("compare_identity") or {})
     for r in runs[1:]:
