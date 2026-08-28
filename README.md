@@ -4,7 +4,7 @@
 
 ---
 
-## 核心能力（均为已实现能力）
+## 核心能力
 
 - **EPUB 小说解析**：章节结构解析 + 正文/版权/题记/推广分类（非正文不污染实体）
 - **chunk pipeline**：按 `CHUNK_SIZE / OVERLAP` 确定性切块，chunk_id 全局递增
@@ -62,7 +62,7 @@ EPUB ─→ 章节分类 ─→ 切块 ─→ LLM 抽取（人物+关系+类别�
   → 点击关系边查看证据（原文 chunk + 章节定位）
 ```
 
-## 项目亮点（面试重点）
+## 项目亮点
 
 1. **Entity Resolution 而非简单 NER**：同一个人物的姓名/别名/角色称谓在整本书中跨 chunk 归并为单一 canonical；canonical 首现锁定保证确定性，judge 判定 + evidence 门控收敛精度。
 2. **lineage 可观测**：extraction → recall → judge → admission → registration → merge 全层事件旁路记录（默认关零开销），任何质量失败可**归因到具体决策层**，不凭经验改代码。
@@ -70,7 +70,7 @@ EPUB ─→ 章节分类 ─→ 切块 ─→ LLM 抽取（人物+关系+类别�
 4. **evaluation framework**：真实 LLM 基线 + 经验分类（stable/variance 与 correctness **解耦**）+ baseline validity——**稳定失败不会被冻结为"正常基线"**（`INVALID_NOT_REGRESSION_SAFE` 如实暴露质量问题）。
 5. **failure handling**：LLM 限流/超时/形状不合规分类处理、重试语义、checkpoint 写失败降级（不浪费已完成 LLM 工作）、评估侧失败 chunk 自动降级（G4）。
 
-## Known Limitations（诚实清单）
+## Known Limitations
 
 - **extraction coverage 模型边界**：部分角色称谓/低显著性 mention（如 `爹爹`、`老二`）在 flash 类模型下存在漏提（有 lineage 证据，归因为 extraction 层，见 `docs/problems/P017`）；产品验收边界：单次低显著性 mention 不要求稳定覆盖（D-19）。
 - **当前 baseline = `INVALID_NOT_REGRESSION_SAFE`**：checkset `C3`（爹爹 ∈ 顺顺.aliases）为稳定失败——框架如实报告该质量问题并**禁止**将其冻结为正常回归基线；这不是缺陷，而是评估框架设计的诚实输出。
