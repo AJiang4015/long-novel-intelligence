@@ -87,6 +87,7 @@
 | P17 | DESCRIPTIVE 首现碎片化（无候选直接建 canonical） | ER 算法 | 🔍 | High | HIGH | [P017](docs/problems/P017-descriptive-fragmentation.md) |
 | P18 | 正文 relational-role canonical sink（P16-b：父亲→顺顺 类吸收） | ER 算法 / judge | ✅ | Medium | HIGH | [P018](docs/problems/P018-relational-role-canonical-sink.md) |
 | P19 | Ingest 任务不可恢复，中断后重跑重复消耗 LLM token | pipeline 可靠性 / 成本 | 🔍 | High | HIGH | [P019](docs/problems/P019-resumable-analysis.md) |
+| P20 | 人工 Neo4j 验收不可重复执行，缺质量基线 | 测试与评估 / 流程 | 🔍 | High | HIGH | [P020](docs/problems/P020-evaluation-framework.md) |
 
 ---
 
@@ -147,6 +148,13 @@
 - **当前状态**: ✅ **implemented + 真实评估完成（2026-08-28）**——实现提交 `d726d2f`（unit 257 + integration 16 全绿，AC-1..AC-11）；真实评估（Run 5，qwen3.8-flash）：resume 时 extraction 26/27 chunk 零重复、judge 19/19 全部重放（delta=0）、novel 复用 + 新 job、resume job completed；AC-2 逐字节一致性 mock 层成立（真实 LLM 下 P06 方差不可逐字节比较，结构级差异归因记录）。评估发现（既有行为）：merge_judge 请求体超 DashScope 6MB、qwen3.7-flash 免费额度 403、真实网络不稳定——resume/重试机制均正确处理。待办：D-18 决策登记（docs-only）。详见 [评估报告](docs/evaluation/2026-08-28-biancheng-p19-resume-eval.md)
 - → [P019 完整记录](docs/problems/P019-resumable-analysis.md) / [P19 Design Spec](docs/superpowers/specs/2026-08-28-p019-resumable-analysis-design.md)
 
+### P20 — 人工 Neo4j 验收不可重复执行，缺质量基线
+
+- **Trigger**: 需要「真实行为验证」的改动（resolver / prompt / hygiene / merger / judge / schema）后的验收环节；需要回答「质量是否回退 / 基线是多少」；P06 归因需要多次运行取趋势
+- **区分**: 本问题 ≠ ER 质量问题（那些是 checkset 检查的对象，属各 PXX）；本问题是**验收机制本身**不可重复、不可比较、无基线
+- **当前状态**: 🔍 **designing（2026-08-28）**——Problem Record + Design Spec 已产出；**Review Round 1 三项阻断修订已合入（v1.1）**，待复审。方案：`backend/tools/eval_framework/`（checkset 声明式检查集 v1，编码 TESTING.md §4/§9.1 + P16/P17/P18 冻结语义；PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP 分类；`run.py --runs N` 一键产出 result + 自动报告；N≥3 冻结质量基线 `docs/evaluation/baselines/`——**stable/variance 按结果稳定性分类（稳定失败 ≠ variance）、stable failure 使基线 INVALID 禁止作回归基线、compare_identity 不匹配才 REFUSE_COMPARE（git_commit 仅 provenance）**；evidence dump 供人工可解释性复核）。约束：P19 checkpoint 语义零改动（eval 强制 `er_checkpoint_enabled=False`）、不重开 P16/P17/P18、不进入性能优化、先建立质量基线（不修质量问题）
+- → [P020 完整记录](docs/problems/P020-evaluation-framework.md) / [P20 Design Spec](docs/superpowers/specs/2026-08-28-p020-evaluation-framework-design.md)
+
 ---
 
 ## 4. Resolved Problems（摘要）
@@ -188,7 +196,8 @@
 | [P016-metadata-context-pollution.md](docs/problems/P016-metadata-context-pollution.md) | P16 非正文上下文污染 canonical 首现（✅ PASS） |
 | [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化（PARTIAL，D5 缺口） |
 | [P018-relational-role-canonical-sink.md](docs/problems/P018-relational-role-canonical-sink.md) | P18 正文 relational-role canonical sink（P16-b，✅ mechanism PASS / capability PARTIAL，冻结） |
-| [P019-resumable-analysis.md](docs/problems/P019-resumable-analysis.md) | P19 ingest 不可恢复 → token 浪费（🔍 designing，checkpoint/resume 修复设计） |
+| [P019-resumable-analysis.md](docs/problems/P019-resumable-analysis.md) | P19 ingest 不可恢复 → token 浪费（✅ implemented + 真实评估，checkpoint/resume；D-18） |
+| [P020-evaluation-framework.md](docs/problems/P020-evaluation-framework.md) | P20 人工验收不可重复 → 缺质量基线（🔍 designing，可重复 regression evaluation + 基线） |
 
 **中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md/PROCESS.md 对应规则中。
 
