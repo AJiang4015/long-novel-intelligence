@@ -128,7 +128,7 @@ Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / �
 2. ✅ **产品决策落地（D-19，2026-08-28）**：接受边界不修复；checkset v2（A1 收敛 + A7 观察）；TESTING.md §4 / DECISIONS D-19 / 本记录同步；
 3. ✅ 针对 checkset v2 重建 3-run baseline（deepseek-v4-flash-0731，目标 VALID；若 A1 仍 FAIL 则为真实核心合并回归信号）；
 4. 持续观察：A7（老二 吸收趋势）在换模型/未来 extraction 策略时的表现；若显著转好可评估升级回核心 gate（显式决策 + checkset bump）；
-5. 同批 variance 信号（A2 天保/大老、C3 爹爹 confirmed）持续观察，不并入本问题。
+5. 同批信号：A2 天保/大老 variance 持续观察；**C3 爹爹 confirmed 已独立归因（EXTRACTION_LAYER，deepseek 5 次出现全漏提）并入 P017 D5-a 实例**（C3 保留 hard gate，v2 基线因 C3 保持 INVALID）——与本问题（老二/A1）同域（extraction coverage）不同 case，不并入本问题。
 
 ## 19. Current Limitation
 
