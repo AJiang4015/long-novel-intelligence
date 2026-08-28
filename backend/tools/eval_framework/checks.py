@@ -607,12 +607,14 @@ CHECKSET_V1 = CheckSet(
         # ---- G 数据安全与图完整性 ----
         CheckDef("G1", "数据安全", "本 novel 子图 labels ⊆ {Novel, Person}（D-3 边界）",
                  {"kind": "labels_subset", "allowed": ("Novel", "Person")},
+                 needs_full_corpus=False,   # 结构/隔离检查：不依赖 chunk-level extraction 证据（Step 5.1）
                  outcome_class=_CLASS_STABLE, attribution="D-3", layer="db"),
         CheckDef("G2", "数据安全", "persons / relationships 计数记录",
                  {"kind": "record_stats", "keys": ("counts.persons", "counts.relationships")},
                  outcome_class=_CLASS_OBSERVATION, attribution="D-2 / TESTING.md §5", layer="db"),
         CheckDef("G3", "数据安全", "无跨 novel 污染（采样 novel_id 全部 == 本 run novel_id）",
                  {"kind": "novel_isolation"},
+                 needs_full_corpus=False,   # 结构/隔离检查：不依赖 chunk-level extraction 证据（Step 5.1）
                  outcome_class=_CLASS_STABLE, attribution="D-2 / D-3", layer="db"),
         CheckDef("G4", "数据安全", "failed_blocks 记录 + 失败 chunk 覆盖检查降级（G4 规则）",
                  {"kind": "record_stats", "keys": ("failed_blocks",)},

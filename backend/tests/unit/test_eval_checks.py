@@ -473,6 +473,27 @@ def test_g4_no_failed_chunks_no_degradation():
     assert {o.check_id: o.outcome for o in outcomes}["A1"] == OUTCOME_PASS
 
 
+def test_g4_structure_checks_g1g3_still_evaluable_on_failed_chunks():
+    """Step 5.1：G1/G3 是结构/隔离检查，不依赖 chunk-level extraction 证据——
+    存在失败 chunk 时仍必须可判定（不得被 G4 降级为 INCONCLUSIVE）。"""
+    st = stats(failed_blocks=[{"chunk_id": 3, "chapter_id": 3, "error": "ReadTimeout"}])
+    # G1：labels 越界 → 必须 FAIL（而非 INCONCLUSIVE）
+    bad_labels = snapshot(labels_used=["Novel", "Person", "Disease"])
+    by_id = {o.check_id: o for o in evaluate_checkset(CHECKSET_V1, bad_labels, st)}
+    assert by_id["G1"].outcome == OUTCOME_FAIL
+    assert "labels_subset" in CHECKSET_V1.by_id("G1").expectation["kind"]
+    # G3：跨 novel 污染 → 必须 FAIL（而非 INCONCLUSIVE）
+    bad_iso = snapshot(novel_ids_seen=["novel-1", "other-novel"])
+    by_id2 = {o.check_id: o for o in evaluate_checkset(CHECKSET_V1, bad_iso, st)}
+    assert by_id2["G3"].outcome == OUTCOME_FAIL
+    # 干净快照 + 失败 chunk → G1/G3 仍 PASS（对照：A1 这类依赖全语料的检查仍 INCONCLUSIVE）
+    clean = snapshot([person("顺顺")])
+    by_id3 = {o.check_id: o for o in evaluate_checkset(CHECKSET_V1, clean, st)}
+    assert by_id3["G1"].outcome == OUTCOME_PASS
+    assert by_id3["G3"].outcome == OUTCOME_PASS
+    assert by_id3["A1"].outcome == OUTCOME_INCONCLUSIVE
+
+
 def test_g4_skips_vacuous_before_degradation():
     """无失败 chunk 时，前置不满足 → SKIP（空洞防优先于判定）。"""
     snap = snapshot([person("翠翠")])  # 无 顺顺
