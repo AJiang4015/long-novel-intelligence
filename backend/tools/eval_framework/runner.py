@@ -375,6 +375,11 @@ def main(argv=None) -> int:
     # 约束 1：eval 强制 fresh novel（checkpoint 零接触）。须在 Settings() 之前设置。
     os.environ["ER_CHECKPOINT_ENABLED"] = "false"
 
+    # 工作目录锚定到 backend 根：支持 `python -m backend.tools.eval_framework.runner`（repo 根）
+    # 与 `cd backend && python -u tools/eval_framework/runner.py` 两种调用方式。
+    # backend/.env 相对 backend cwd 解析（pydantic-settings env_file=".env"）；其余相对路径同此基准。
+    os.chdir(_BACKEND_ROOT)
+
     from app.config import Settings
 
     try:
