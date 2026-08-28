@@ -1,6 +1,6 @@
 # P020 — 人工 Neo4j 验收不可重复执行，缺质量基线（Evaluation Framework）
 
-- **Status**: ✅ implemented + 首份真实基线已产出（2026-08-28，3 run，deepseek-v4-flash-0731）——**baseline_status=INVALID_NOT_REGRESSION_SAFE（A1 稳定失败 FAIL×3）**：框架按 v1.1 有效性机制如实暴露质量问题并禁止用于回归比较；A1（老二 未并入 傩送，P08 域）修复另立跟进
+- **Status**: ✅ implemented + 首份真实基线已产出（2026-08-28，3 run，deepseek-v4-flash-0731），**P20 收尾完成**——**baseline_status=INVALID_NOT_REGRESSION_SAFE（A1 稳定失败 FAIL×3）**：框架按 v1.1 有效性机制如实暴露质量问题并禁止用于回归比较；**A1 另立 P021**（老二 未并入 傩送，extraction-recall 域，不在 P20 修复）；**F1（merge_judge 6MB 超限）沿用 P19 评估发现跟进项，不新建编号**
 - **Severity**: High（质量回归风险：验收人工化、不可重复、无冻结基线，代码改动后无法系统性比对真实行为漂移）
 - **Domain**: 测试与评估 / 流程
 - **Tags**: evaluation, regression, quality-baseline, neo4j-acceptance, repeatability, llm-nondeterminism, checkset

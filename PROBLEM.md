@@ -87,7 +87,8 @@
 | P17 | DESCRIPTIVE 首现碎片化（无候选直接建 canonical） | ER 算法 | 🔍 | High | HIGH | [P017](docs/problems/P017-descriptive-fragmentation.md) |
 | P18 | 正文 relational-role canonical sink（P16-b：父亲→顺顺 类吸收） | ER 算法 / judge | ✅ | Medium | HIGH | [P018](docs/problems/P018-relational-role-canonical-sink.md) |
 | P19 | Ingest 任务不可恢复，中断后重跑重复消耗 LLM token | pipeline 可靠性 / 成本 | 🔍 | High | HIGH | [P019](docs/problems/P019-resumable-analysis.md) |
-| P20 | 人工 Neo4j 验收不可重复执行，缺质量基线 | 测试与评估 / 流程 | 🔍 | High | HIGH | [P020](docs/problems/P020-evaluation-framework.md) |
+| P20 | 人工 Neo4j 验收不可重复执行，缺质量基线 | 测试与评估 / 流程 | ✅ | High | HIGH | [P020](docs/problems/P020-evaluation-framework.md) |
+| P21 | 《边城》正向合并：老二 未并入 傩送 aliases（deepseek 稳定失败） | ER 算法 / extraction-recall | 🔍 | High | HIGH | [P021](docs/problems/P021-alias-merge-er-lao-er.md) |
 
 ---
 
@@ -152,8 +153,15 @@
 
 - **Trigger**: 需要「真实行为验证」的改动（resolver / prompt / hygiene / merger / judge / schema）后的验收环节；需要回答「质量是否回退 / 基线是多少」；P06 归因需要多次运行取趋势
 - **区分**: 本问题 ≠ ER 质量问题（那些是 checkset 检查的对象，属各 PXX）；本问题是**验收机制本身**不可重复、不可比较、无基线
-- **当前状态**: ✅ **implemented + 首份真实基线已产出（2026-08-28）**。框架：`backend/tools/eval_framework/`（checkset v1 声明式检查集 23 条 + runner/evidence/baseline/report，纯函数判定；PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP；`--dry-run/--smoke/--runs` 已接线，baseline/compare CLI 未接）。**首份基线（deepseek-v4-flash-0731，3 run 全 completed）：baseline_status = INVALID_NOT_REGRESSION_SAFE**——A1 稳定失败（老二 未并入 傩送，P08 域，另立跟进）；C1/C2/C4（P16-b 核心）3/3 PASS、C3/A2 variance、F1 因 merge 6MB 限制恒 INCONCLUSIVE/观察；artifact `docs/evaluation/baselines/biancheng-2026-08-28-deepseek-v4-flash-0731.json` + [基线报告](docs/evaluation/2026-08-28-biancheng-quality-baseline.md)。约束全程成立：P19 checkpoint 语义零改动（eval 强制 `er_checkpoint_enabled=False`）、不重开 P16/P17/P18、不进入性能优化、先建立质量基线（质量问题另立立项不在此修）
+- **当前状态**: ✅ **implemented + 首份真实基线已产出（2026-08-28），P20 收尾完成**。框架：`backend/tools/eval_framework/`（checkset v1 声明式检查集 23 条 + runner/evidence/baseline/report，纯函数判定；PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP；`--dry-run/--smoke/--runs` 已接线，baseline/compare CLI 未接——按 Spec §15 保持现状）。**首份基线（deepseek-v4-flash-0731，3 run 全 completed）：baseline_status = INVALID_NOT_REGRESSION_SAFE**——A1 稳定失败（老二 未并入 傩送，**另立 P021**）；C1/C2/C4（P16-b 核心）3/3 PASS、C2 解除 P16-b 风险（1-run FAIL 属 D5 category 绕过形态，D-10 Known Limitation）、C3/A2 variance、F1 因 merge_judge 6MB 限制恒 INCONCLUSIVE/观察（**沿用 P19 评估发现跟进项，不新建**）；artifact `docs/evaluation/baselines/biancheng-2026-08-28-deepseek-v4-flash-0731.json` + [基线报告](docs/evaluation/2026-08-28-biancheng-quality-baseline.md)。约束全程成立：P19 checkpoint 语义零改动（eval 强制 `er_checkpoint_enabled=False`）、不重开 P16/P17/P18、不进入性能优化、不修改 expectation 适配结果
 - → [P020 完整记录](docs/problems/P020-evaluation-framework.md) / [P20 Design Spec](docs/superpowers/specs/2026-08-28-p020-evaluation-framework-design.md)
+
+### P21 — 《边城》正向合并：老二 未并入 傩送 aliases（deepseek 稳定失败）
+
+- **Trigger**: 真实评估中 A1（正向 1 组：傩送/二老/老二 合并）FAIL；P20 基线 INVALID（stable failure）
+- **区分**: 本问题 ≠ P20 framework 问题（P20 只是暴露源）；≠ canonical 分裂（单一 canonical 已实证）；归因待 lineage Task A（extraction coverage vs judge vs recall，D-11）
+- **当前状态**: 🔍 **investigating（2026-08-28 立项）**——3-run baseline 实证 `A1 FAIL×3` → stable failure → P20 基线 INVALID。形态：`老二` 未成为 `傩送` alias（`二老` 在、`老二` 不在；mc=15 单一 canonical，无分裂）。**不在 P20 内修复**；归因前不改代码（Task A lineage 优先，D-11）。F1（merge 6MB）不并入本问题，沿用 P19 跟进
+- → [P021 完整记录](docs/problems/P021-alias-merge-er-lao-er.md)
 
 ---
 
@@ -197,7 +205,8 @@
 | [P017-descriptive-fragmentation.md](docs/problems/P017-descriptive-fragmentation.md) | P17 DESCRIPTIVE 首现碎片化（PARTIAL，D5 缺口） |
 | [P018-relational-role-canonical-sink.md](docs/problems/P018-relational-role-canonical-sink.md) | P18 正文 relational-role canonical sink（P16-b，✅ mechanism PASS / capability PARTIAL，冻结） |
 | [P019-resumable-analysis.md](docs/problems/P019-resumable-analysis.md) | P19 ingest 不可恢复 → token 浪费（✅ implemented + 真实评估，checkpoint/resume；D-18） |
-| [P020-evaluation-framework.md](docs/problems/P020-evaluation-framework.md) | P20 人工验收不可重复 → 缺质量基线（🔍 designing，可重复 regression evaluation + 基线） |
+| [P020-evaluation-framework.md](docs/problems/P020-evaluation-framework.md) | P20 人工验收不可重复 → 缺质量基线（✅ implemented + 首份基线 INVALID（A1 稳定失败），已收尾） |
+| [P021-alias-merge-er-lao-er.md](docs/problems/P021-alias-merge-er-lao-er.md) | P21 老二 未并入 傩送 aliases（🔍 investigating，baseline 暴露的 stable failure） |
 
 **中短问题（P02/P03/P07/P12/P13/P14）**：无独立文档，完整记录保留在本文件 §4 摘要 + AGENTS.md/TESTING.md/PROCESS.md 对应规则中。
 
