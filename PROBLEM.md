@@ -160,7 +160,7 @@
 
 - **Trigger**: 真实评估中 A1（正向 1 组：傩送/二老/老二 合并）FAIL；P20 基线 INVALID（stable failure）
 - **区分**: 本问题 ≠ P20 framework 问题（P20 只是暴露源）；≠ canonical 分裂（单一 canonical 已实证）；归因待 lineage Task A（extraction coverage vs judge vs recall，D-11）
-- **当前状态**: 🔍 **investigating（2026-08-28 立项）**——3-run baseline 实证 `A1 FAIL×3` → stable failure → P20 基线 INVALID。形态：`老二` 未成为 `傩送` alias（`二老` 在、`老二` 不在；mc=15 单一 canonical，无分裂）。**不在 P20 内修复**；归因前不改代码（Task A lineage 优先，D-11）。F1（merge 6MB）不并入本问题，沿用 P19 跟进
+- **当前状态**: 🔍 **investigating（2026-08-28 立项；Task A 归因已完成）**——3-run baseline 实证 `A1 FAIL×3` → stable failure → P20 基线 INVALID。**归因结论：`EXTRACTION_LAYER`（D5-a 形态，P017 域）**——`老二` 全文仅 1 次出现（chunk15/ch13「有人羡慕二老得到碾坊，也有人羡慕碾坊得到老二！」），deepseek 漏提（该 chunk 提取 27 角色含 傩送/二老 但不含 老二）；lineage JSONL 老二 零出现、recall/judge/registration 无事件（机制完好，排除 P06/P08）。修复方向与 P017 D5-a 同域（prompt A/B 已证边际收益有限 `cd52844`），候选：接受 Known Limitation（模型域）/ 换模型评估，**决策待用户拍板**。**不在 P20 内修复**；F1（merge 6MB）沿用 P19 跟进
 - → [P021 完整记录](docs/problems/P021-alias-merge-er-lao-er.md)
 
 ---

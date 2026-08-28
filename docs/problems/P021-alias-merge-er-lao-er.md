@@ -1,6 +1,6 @@
 # P021 — 《边城》正向合并：`老二` 未并入 `傩送` aliases（deepseek-v4-flash-0731 稳定失败）
 
-- **Status**: 🔍 investigating（baseline 观测成立；**归因待 lineage Task A**——extraction coverage vs judge 判定，D-11「Task A 先于 Task B」）
+- **Status**: 🔍 **归因完成（2026-08-28，lineage Task A）——`EXTRACTION_LAYER`（D5-a 形态）**：`老二` 未提取（全文仅 1 次出现于 chunk15/ch13，LLM 漏提；recall/judge/registration 链路无事件，机制完好）。修复方向评估中：与 P017 D5-a 同域（prompt A/B 已证边际收益有限，`cd52844`），候选结论 = 接受为 Known Limitation（模型域）或换模型评估
 - **Severity**: High（正向合并基线检查稳定失败 → P20 基线 `INVALID_NOT_REGRESSION_SAFE`，阻塞回归比较）
 - **Domain**: ER 算法 / extraction-recall（P08 域）
 - **Tags**: alias-merge, recall, extraction-coverage, stable-failure, baseline-exposed
@@ -39,38 +39,51 @@ TESTING.md §4 正向 1 组：`傩送 / 二老（+老二）` 期望归并为同�
 
 `老二` 未能成为 `傩送` 的 alias，候选解释（按归因链，PIPELINE_LAYER §4）：
 
-- **(a) extraction coverage 缺失（D5-a 形态）**：`老二` 未被 LLM 提取为 mention → 根本未进入 pipeline；
-- **(b) judge 判 null / 判不同（P06）**：`老二` 被提取，但 judge 未将其 resolves_to 傩送；
-- **(c) recall 未召回（P08）**：`老二` 出现 chunk 与 傩送 无共现且无桥接，未产生候选（零共享字场景）。
+- **(a) extraction coverage 缺失（D5-a 形态）**：`老二` 未被 LLM 提取为 mention → 根本未进入 pipeline；—— **✅ 已证实（Task A）**
+- **(b) judge 判 null / 判不同（P06）**：`老二` 被提取，但 judge 未将其 resolves_to 傩送；—— ❌ 排除（无任何 mention 事件）
+- **(c) recall 未召回（P08）**：`老二` 出现 chunk 与 傩送 无共现且无桥接，未产生候选（零共享字场景）；—— ❌ 排除（mention 未进入 recall 层）
 
 ## 7. Investigation Path
 
 ```text
-Step 1  lineage 观测重跑（ER_LINEAGE=1，1 run）：确认 老二 mention 是否进入 extraction 输出
-Step 2  (a) 若未提取 → extraction coverage（D5-a 形态，P017 域）→ prompt/模型域
-Step 3  (b) 若已提取 → 查 recall 事件（是否进入候选集）→ judge 事件（resolves_to / null）归层
-Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / 确定性文本检索）→ 与该 canonical chapters 对照
+Step 1  lineage 观测重跑（ER_LINEAGE=1，1 run）：确认 老二 mention 是否进入 extraction 输出   ✅ 未进入
+Step 2  (a) 若未提取 → extraction coverage（D5-a 形态，P017 域）→ prompt/模型域              ✅ EXTRACTION_LAYER
+Step 3  (b) 若已提取 → 查 recall 事件（是否进入候选集）→ judge 事件（resolves_to / null）归层  —（无 mention 事件，跳过）
+Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / 确定性文本检索）→ 与该 canonical chapters 对照  ✅ 全文 1 次（chunk15/ch13）
 ```
 
 ## 8. Experiments
 
-（设计阶段，尚未实施。计划：lineage 归因重跑 + 原文证据核对；不凭经验改代码——D-11。）
+- **Task A lineage 归因 run（2026-08-28）**：`ER_LINEAGE=1 + ER_LINEAGE_RAW_EXTRACTION=1`，deepseek-v4-flash-0731，并发 4，fresh novel `764795aa-34b1-4a10-8333-61901bfec1fc`，job=completed（0 failed chunk）；lineage JSONL 落 `.tmp/lineage-p021/764795aa….jsonl`（664 KB）；
+- 归层：`tools/diagnose_lineage.py … --mention 老二 --expect 老二=傩送` → **verdict=EXTRACTION_LAYER**；
+- 交叉验证：JSONL 全文 `老二` 出现 **0 次**（含 raw extraction）；对照 `二老` 链路正常（judge resolves_to=傩送）→ merge 机制完好。
 
 ## 9. Evidence
 
 - **baseline artifact**（`biancheng-2026-08-28-deepseek-v4-flash-0731.json`）：`per_check.A1 = {"classification": "stable", "satisfies_expected": false, "outcome_distribution": {"FAIL": 3}}`；`baseline_status = INVALID_NOT_REGRESSION_SAFE`；`stable_failures = [A1]`；
 - **3 个 run 的 result.json**：A1 reason 恒为 `aliases 缺失: ['老二']`；
 - **图结构证据（Neo4j 直查，2026-08-28）**：3 个 run 中 傩送 均为**单一 canonical**（mc=15，chapters=[5,6,7,8,12,13,15,17,18,19,20,21,22,24]，三 run 一致），`二老` ∈ aliases，`老二` ∉ aliases——**排除分裂**（非 P08 零共享字分裂）；问题形态 = 老二 这一别名丢失；
-- **1-run 佐证**（novel `f4c78364`，同模型）：A1 同 FAIL——行为跨 4 次运行一致。
+- **1-run 佐证**（novel `f4c78364`，同模型）：A1 同 FAIL——行为跨 4 次运行一致；
+- **Task A lineage 决定性证据（2026-08-28，novel `764795aa`，ER_LINEAGE=1 + RAW=1）**：
+  - `diagnose_lineage.py --mention 老二 --expect 老二=傩送` → **verdict = EXTRACTION_LAYER**（无任何 lineage 事件，raw extraction 亦无）；
+  - **lineage JSONL 全文 `老二` 出现 0 次**（含 extraction_raw / chunk_start / judge_batch）；
+  - 原文对照（确定性重切）：`老二` 全文**仅出现 1 次**——chunk15/ch13「有人羡慕二老得到碾坊，也有人羡慕碾坊得到**老二**！」（祖父俏皮话，老二=二老=傩送）；该 chunk 的 extraction_raw **提取了 27 个角色（含 傩送/二老）但未提取 老二**；
+  - 对照 `二老`：extraction ✓ → recall 候选 ✓ → judge resolves_to=傩送 ✓ ——**merge/recall/judge 机制完好**，问题纯在 extraction 层。
 
 ## 10. Root Cause
 
-**未定**。已排除「分裂」（单一 canonical 存在）；候选集中于 extraction coverage（D5-a）/ judge 判定（P06）/ recall（P08），需 lineage 归因（§7 Step 1-3）。
+**`EXTRACTION_LAYER`（extraction mention coverage 缺失，D5-a 形态，P017 域）**：
+
+`老二` 全文仅出现 1 次（chunk15/ch13 祖父俏皮话「有人羡慕二老得到碾坊，也有人羡慕碾坊得到老二！」），deepseek-v4-flash-0731 在该 chunk 提取了 27 个角色（含 傩送/二老）但**未提取 `老二`** → mention 从未进入 pipeline（recall/judge/registration 无事件）→ `老二` 不可能成为 傩送 的 alias → A1 稳定失败。
+
+**与 P017 D5-a 同域**：D5-a = extraction mention coverage 缺失（爸爸/妈妈/大儿子/翠翠的祖父 等未提取）；`老二` 是同一模式的又一实例。P017 D5-a prompt A/B（`cd52844`）已证：prompt 增强对单次低显著性 mention 的覆盖增益有限 + 伴随 descriptive 化风险 → B 未采纳，coverage 缺失归模型域（P06 提取方差）。
 
 ## 11. Ruled-out Causes
 
 - ~~canonical 分裂（P08 零共享字分裂）~~：图结构显示单一 canonical（mc=15，三 run 一致），非分裂。
 - ~~A1 checkset 定义错误~~：expectation 与 TESTING.md §4 正向 1 组一致（老二 是既有验证成员）；1-run 与 3-run 行为一致。
+- ~~recall 未召回（P08）~~：`老二` 无任何 lineage 事件（含 mention_enter）——未到 recall 层，排除。
+- ~~judge 判 null（P06）~~：`老二` 无任何 judge 事件——未到 judge 层，排除；对照 `二老` judge 链路正常。
 
 ## 12. Failed Approaches
 
@@ -78,7 +91,13 @@ Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / �
 
 ## 13. Correct Approach
 
-按 PROCESS.md 纪律：**归因（lineage Task A，D-11）→ 归到拥有该决策的层 → Spec → Review → 修复 → 重跑 3-run baseline 重建 VALID 基线**。候选修复面（归因后选）：prompt 增强（D5-a）/ recall 结构规则 / judge 判定对齐；**不扩 generic 词表（D-7）、不引入 classifier（D-10）、不修改 P16-b**。
+修复方向 = **extraction coverage（P017 D5-a 同域）**，候选：
+
+1. **prompt 增强**：参照 P017 D5-a A/B 经验（`cd52844`）——**B 未采纳**，单次低显著性 mention 的覆盖增益有限 + descriptive 化风险；预计对 `老二` 类案例边际收益低；
+2. **接受为 Known Limitation（模型域）**：与 P017 D5-a 结论一致——coverage 缺失归模型提取方差（P06 域）；A1 在换更强模型/未来 extraction 策略时复评；
+3. **换模型评估**：若后续模型对单次 mention 覆盖更好，A1 可能自然转 PASS（届时重建基线验证）。
+
+**不扩 generic 词表（D-7）、不引入 classifier（D-10）、不修改 P16-b（D-6）、不修改 A1 expectation（P20 纪律）**。决策待用户拍板（见 §18 Follow-up 2）。
 
 ## 14. Invariants
 
@@ -90,8 +109,8 @@ Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / �
 
 ## 15. Validation
 
-- 归因验证：lineage 重跑确认 老二 在 extraction / recall / judge 三层的去向（唯一证据路径）；
-- 修复验证：A1 `PASS × 3` + P20 基线重建 `VALID`；
+- ✅ **归因验证已完成**：lineage 重跑确认 `老二` 在 extraction 层缺失（无 mention 事件、raw extraction 零出现、原文唯一出现点 chunk15 的 27 角色不含它），recall/judge/registration 无事件（排除）；对照 `二老` 全链路正常（机制完好）；
+- 修复验证（若采取修复）：A1 `PASS × 3` + P20 基线重建 `VALID`；
 - 回归：P08/P09 相关 unit + integration 全绿。
 
 ## 16. Trade-offs
@@ -105,10 +124,10 @@ Step 4  原文定位：老二 在《边城》中出现章节（evidence dump / �
 
 ## 18. Follow-up
 
-1. Task A：lineage 观测（ER_LINEAGE=1）重跑 1 run，归因 老二 在 extraction/recall/judge 层的去向；
-2. 原文证据核对（老二 出现章节 ↔ canonical chapters 差异）；
-3. 归因结论 → 按 D-12 决定是否再拆分（若 extraction coverage 则并入 P017 D5-a 域评估，若 judge 则 P06 域）；
-4. 修复后重跑 3-run baseline → A1 stable PASS → P20 基线重建 VALID。
+1. ✅ **Task A 归因完成**（2026-08-28，lineage run novel `764795aa`）：`EXTRACTION_LAYER` / D5-a 形态（证据见 §8/§9/§10）；
+2. **修复方向决策（待用户拍板）**：prompt 增强（边际收益低，参照 `cd52844`）/ 接受为 Known Limitation（模型域）/ 换模型评估——若接受 Known Limitation，与 P017 D5-a 合并记录（不单独拆 D-12 立项）；
+3. 若采取修复：修复后重跑 3-run baseline → A1 `PASS×3` → P20 基线重建 VALID；
+4. 同批 variance 信号（A2 天保/大老 2/3、C3 爹爹 confirmed 1/3）持续观察，不并入本问题。
 
 ## 19. Current Limitation
 
