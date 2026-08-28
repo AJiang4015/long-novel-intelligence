@@ -216,7 +216,9 @@ def _upload(client, epub_bytes: bytes, filename: str) -> dict:
     return resp.json()
 
 
-def _wait_job(client, job_id: str, timeout: int = 30 * 60) -> dict:
+def _wait_job(client, job_id: str, timeout: int = 120 * 60) -> dict:
+    # 默认 2h/run：qwen3.8-max 大模型 + .env concurrency=1 时单 run（27 chunk extract 串行 + judge 串行）
+    # 可能远超 30 分钟（P19 实测 flash 并发 4 时约 8 分钟）；超时仅保护「挂死」，不限制正常慢运行。
     deadline = datetime.now().timestamp() + timeout
     while datetime.now().timestamp() < deadline:
         job = client.get(f"/api/jobs/{job_id}").json()
