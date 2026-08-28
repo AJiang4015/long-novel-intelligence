@@ -6,7 +6,7 @@
 模块：
 - checks.py    checkset v1 声明式检查集 + 纯函数判定（Step 1）
 - runner.py    编排（Step 2）：env 采集 / compare_identity / 上传 / 轮询 / 快照 / 检查
-- baseline.py  基线聚合与回归比较（Step 3）
 - evidence.py  alias→原文上下文证据转储（Step 2）
-- report.py    TESTING.md §9 模板报告（Step 2）
+- baseline.py  基线聚合与回归比较（Step 3）
+- report.py    TESTING.md §9 模板报告（Step 3）
 """
