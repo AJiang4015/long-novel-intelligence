@@ -1,6 +1,6 @@
 # P020 — 人工 Neo4j 验收不可重复执行，缺质量基线（Evaluation Framework）
 
-- **Status**: 🔍 designing（Problem Record + Design Spec 已产出；**Review Round 1 三项阻断修订已合入 v1.1**，待复审）
+- **Status**: ✅ implemented + 首份真实基线已产出（2026-08-28，3 run，deepseek-v4-flash-0731）——**baseline_status=INVALID_NOT_REGRESSION_SAFE（A1 稳定失败 FAIL×3）**：框架按 v1.1 有效性机制如实暴露质量问题并禁止用于回归比较；A1（老二 未并入 傩送，P08 域）修复另立跟进
 - **Severity**: High（质量回归风险：验收人工化、不可重复、无冻结基线，代码改动后无法系统性比对真实行为漂移）
 - **Domain**: 测试与评估 / 流程
 - **Tags**: evaluation, regression, quality-baseline, neo4j-acceptance, repeatability, llm-nondeterminism, checkset
@@ -187,16 +187,30 @@ Step 7  审计 D-5/D-6/D-9/D-10/D-13/D-17 与 P16/P17/P18：冻结语义的编�
 4. **基线运行（N≥3，真实 LLM，《边城》）→ 冻结基线 artifact + 基线报告**（阶段一交付物）；
 5. 基线报告回写本 Record；基线暴露的质量问题分别记录为 observation / 新 Problem 立项（**不在 P20 修复**）。
 
+**执行结果（2026-08-28）**：
+
+- ✅ **实现完成**：Step 1-5（checkset v1 / runner / evidence / baseline / report + README + TESTING.md 指向 + G1/G3 修订 + 自检），commits `070711c`（docs）→ `8adf37a`（Step 1）→ `8c684ee`（Step 2）→ `71ea076`（Step 3）→ `c738367`（Step 4）→ `c3b99d7`（Step 5 路径修复）→ `703f434`（Step 5.1 G1/G3）→ `2e7e47b`（超时 2h）；全量 343 unit + integration 零回归；
+- ✅ **首份真实基线（Step 6，deepseek-v4-flash-0731，并发 4，fresh novel ×3，checkpoint 禁用）**：
+  - 3 run 全部 `completed`（0 failed chunk），novel `070c03ce…` / `40d057fb…` / `681538d9…`（另 1-run 验证 novel `f4c78364…`，均按 TESTING §7 保留）；
+  - **baseline_status = `INVALID_NOT_REGRESSION_SAFE`**（v1.1 有效性机制如实工作）：**A1 稳定失败（FAIL×3）**——deepseek 下 `老二` 未并入 `傩送` aliases（P08/extraction/recall 域，**新 Problem 立项候选**，不在 P20 修复）；
+  - **C2（翠翠的父亲 拦截）3/3 PASS → stable**——P16-b qualified admission **未系统性失守**（1-run 的单次 FAIL 判为方差，非规则缺口）；
+  - C1 父亲 拦截、C4 sink 收敛（本轮 3/3 PASS）、C3 爹爹 confirmed（2/3 FAIL，variance）、A2 天保/大老（2/3，variance）；A3/A4/A6/D1 等 1-run 的 FAIL 在 3-run 均收敛为 stable PASS（单次波动）；
+  - **F1 merge**：2/3 INCONCLUSIVE（merge_judge 400——**6MB 请求体超限 / input length**，P19 已知既有行为）+ 1/3 OBSERVATION（0 pairs）——merge 层质量在 P20 域内不可判（记录，独立跟进）；
+  - 基线 artifact：`docs/evaluation/baselines/biancheng-2026-08-28-deepseek-v4-flash-0731.json`；基线报告：`docs/evaluation/2026-08-28-biancheng-quality-baseline.md`；
+  - **未修改任何 expectation / resolver / pipeline 适配本轮结果**；Neo4j 无污染（labels 仅 Novel/Person）、checkpoint 目录零新增（G5 物理验证）。
+
 ## 19. Current Limitation
 
-设计边界内已知限制：
+实现后已知限制（含首份基线暴露项）：
 
 - 基线是**记录**不是门禁：只提供回归比较，不自动阻断（手动触发）；
 - 语义可解释性核对仍人工（证据自动、判定人工）；
 - 语料锁《边城》；新语料需重建检查集与基线（项目级规则哲学，D-7/D-16）；
 - 单次 compare 运行成本 ≈ 一次全量 ingest（token + 时间）；
 - 环境漂移（换模型 / 换 chunk 配置）使旧基线不可比较（需新基线）；
-- variance 检查单次 FAIL 不构成回归证据（需趋势）。
+- variance 检查单次 FAIL 不构成回归证据（需趋势）；
+- **首份基线为 INVALID_NOT_REGRESSION_SAFE**（A1 稳定失败）——在 A1 修复并重建基线前，不得用其做正常回归比较；
+- **merge 层不可判**：merge_judge 请求体超 DashScope 6MB / input length 上限（P19 已知既有行为）→ F1 恒 INCONCLUSIVE/观察，merge 质量在 P20 域内无信号（独立跟进）。
 
 ## 20. Do Not Reopen
 

@@ -152,7 +152,7 @@
 
 - **Trigger**: 需要「真实行为验证」的改动（resolver / prompt / hygiene / merger / judge / schema）后的验收环节；需要回答「质量是否回退 / 基线是多少」；P06 归因需要多次运行取趋势
 - **区分**: 本问题 ≠ ER 质量问题（那些是 checkset 检查的对象，属各 PXX）；本问题是**验收机制本身**不可重复、不可比较、无基线
-- **当前状态**: 🔍 **designing（2026-08-28）**——Problem Record + Design Spec 已产出；**Review Round 1 三项阻断修订已合入（v1.1）**，待复审。方案：`backend/tools/eval_framework/`（checkset 声明式检查集 v1，编码 TESTING.md §4/§9.1 + P16/P17/P18 冻结语义；PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP 分类；`run.py --runs N` 一键产出 result + 自动报告；N≥3 冻结质量基线 `docs/evaluation/baselines/`——**stable/variance 按结果稳定性分类（稳定失败 ≠ variance）、stable failure 使基线 INVALID 禁止作回归基线、compare_identity 不匹配才 REFUSE_COMPARE（git_commit 仅 provenance）**；evidence dump 供人工可解释性复核）。约束：P19 checkpoint 语义零改动（eval 强制 `er_checkpoint_enabled=False`）、不重开 P16/P17/P18、不进入性能优化、先建立质量基线（不修质量问题）
+- **当前状态**: ✅ **implemented + 首份真实基线已产出（2026-08-28）**。框架：`backend/tools/eval_framework/`（checkset v1 声明式检查集 23 条 + runner/evidence/baseline/report，纯函数判定；PASS/FAIL/OBSERVATION/INCONCLUSIVE/SKIP；`--dry-run/--smoke/--runs` 已接线，baseline/compare CLI 未接）。**首份基线（deepseek-v4-flash-0731，3 run 全 completed）：baseline_status = INVALID_NOT_REGRESSION_SAFE**——A1 稳定失败（老二 未并入 傩送，P08 域，另立跟进）；C1/C2/C4（P16-b 核心）3/3 PASS、C3/A2 variance、F1 因 merge 6MB 限制恒 INCONCLUSIVE/观察；artifact `docs/evaluation/baselines/biancheng-2026-08-28-deepseek-v4-flash-0731.json` + [基线报告](docs/evaluation/2026-08-28-biancheng-quality-baseline.md)。约束全程成立：P19 checkpoint 语义零改动（eval 强制 `er_checkpoint_enabled=False`）、不重开 P16/P17/P18、不进入性能优化、先建立质量基线（质量问题另立立项不在此修）
 - → [P020 完整记录](docs/problems/P020-evaluation-framework.md) / [P20 Design Spec](docs/superpowers/specs/2026-08-28-p020-evaluation-framework-design.md)
 
 ---

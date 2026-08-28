@@ -1,0 +1,357 @@
+{
+  "schema_version": 1,
+  "baseline_id": "biancheng-2026-08-28-deepseek-v4-flash-0731",
+  "created": "2026-08-28T15:04:11.433079+00:00",
+  "runs": [
+    "9e494d16-49c9-44af-a8d8-0c57a05a9cb1",
+    "a647a8ca-ebfe-4717-8f38-2393f68abe14",
+    "da86a5a0-4e3c-4fb8-bdd9-30c8ae743f75"
+  ],
+  "provenance": {
+    "git_commit": "2e7e47b6c3d350eaa31ccb54a403ef809b559550",
+    "git_dirty": false,
+    "model": "deepseek-v4-flash-0731",
+    "concurrency": 4,
+    "neo4j_version": "5.26.0"
+  },
+  "compare_identity": {
+    "corpus_hash": "1293b0befe978e0b7a3ab6358b8616bb191693f6ff1e9549c4e541ee21b73aae",
+    "checkset_version": "1",
+    "model": "deepseek-v4-flash-0731",
+    "chunk_size": 4000,
+    "chunk_overlap": 400,
+    "chunker_version": "1",
+    "extractor_version": "1",
+    "prompt_hashes": {
+      "extraction": "27614155abfa134120c108f94aea272fbaf049e3bf33a0debd02d05983dcc270",
+      "judge": "9fae97eaafedad7d44429be3f7a8ca08081f75de9618cb39719751c8c5d23349",
+      "merge": "d1083b52b2f287109078edb849d6ffe8f24ab709e71bf825e67ce44207891bc1"
+    }
+  },
+  "checkset_version": "1",
+  "corpus": {
+    "name": "边城",
+    "content_hash": "1293b0befe978e0b7a3ab6358b8616bb191693f6ff1e9549c4e541ee21b73aae"
+  },
+  "baseline_status": "INVALID_NOT_REGRESSION_SAFE",
+  "stable_failures": [
+    {
+      "check_id": "A1",
+      "outcome_distribution": {
+        "FAIL": 3
+      }
+    }
+  ],
+  "per_check": {
+    "A1": {
+      "classification": "stable",
+      "satisfies_expected": false,
+      "outcome_distribution": {
+        "FAIL": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "variance",
+      "attribution": "P08 / D-4",
+      "layer": "merge",
+      "group": "正向合并",
+      "description": "傩送/二老/老二 归并为同一 canonical，aliases 含其余名"
+    },
+    "A2": {
+      "classification": "variance",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "PASS": 2,
+        "FAIL": 1
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "variance",
+      "attribution": "P08 / D-4",
+      "layer": "merge",
+      "group": "正向合并",
+      "description": "天保/大老 归并为同一 canonical，aliases 含其余名"
+    },
+    "A3": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "P08 / D-4",
+      "layer": "merge",
+      "group": "正向合并",
+      "description": "老船夫 不独立 canonical，吸收进 祖父.aliases"
+    },
+    "A4": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "variance",
+      "attribution": "P06",
+      "layer": "judge",
+      "group": "正向合并",
+      "description": "爷爷 → 祖父 alias（P06 波动）"
+    },
+    "A5": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "P08 / D-4",
+      "layer": "merge",
+      "group": "正向合并",
+      "description": "负向：傩送 与 杨马兵 不得合并"
+    },
+    "A6": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "variance",
+      "attribution": "D-2",
+      "layer": "registration",
+      "group": "正向合并",
+      "description": "alias 搜索 q=二老 唯一命中 canonical=傩送"
+    },
+    "B1": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "P016",
+      "layer": "admission",
+      "group": "非正文",
+      "description": "非正文 canonical 数量 == 0"
+    },
+    "B2": {
+      "classification": "unclassified",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "OBSERVATION": 3
+      },
+      "decisive_count": 0,
+      "prior_outcome_class": "observation",
+      "attribution": "P016",
+      "layer": "admission",
+      "group": "非正文",
+      "description": "provisional → promoted/dropped 计数（observation）"
+    },
+    "C1": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "D-5 / D-6",
+      "layer": "admission",
+      "group": "P16-b/P18",
+      "description": "父亲 不得成为 Person，也不得被任何 aliases 吸收（前置：顺顺 存在）"
+    },
+    "C2": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "D-5",
+      "layer": "admission",
+      "group": "P16-b/P18",
+      "description": "翠翠的父亲 不得被任何 aliases 吸收（qualified 拦截）"
+    },
+    "C3": {
+      "classification": "variance",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "FAIL": 2,
+        "PASS": 1
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "variance",
+      "attribution": "D-5",
+      "layer": "admission",
+      "group": "P16-b/P18",
+      "description": "爹爹 ∈ 顺顺.aliases（≥2 独立证据 → confirmed 机制实证）"
+    },
+    "C4": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "variance",
+      "attribution": "D-6 / P018",
+      "layer": "admission",
+      "group": "P16-b/P18",
+      "description": "顺顺.aliases 不含 父亲/爸爸（sink 收敛；爸爸 波动归 D5）"
+    },
+    "C5": {
+      "classification": "unclassified",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "OBSERVATION": 3
+      },
+      "decisive_count": 0,
+      "prior_outcome_class": "observation",
+      "attribution": "D-10 / P017-D5",
+      "layer": "registration",
+      "group": "P16-b/P18",
+      "description": "爸爸 独立 Person → OBSERVATION（D5 Known Limitation，非 FAIL）"
+    },
+    "D1": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "variance",
+      "attribution": "P017 / D-9",
+      "layer": "registration",
+      "group": "P17/D-9",
+      "description": "ch5b 家族碎片（大儿子/长子/次子/第二个儿子）不独立 canonical、不错吸家族外"
+    },
+    "D2": {
+      "classification": "unclassified",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "OBSERVATION": 3
+      },
+      "decisive_count": 0,
+      "prior_outcome_class": "observation",
+      "attribution": "P017 / P06",
+      "layer": "registration",
+      "group": "P17/D-9",
+      "description": "descriptive/composite resolved/unresolved 计数（observation；趋势）"
+    },
+    "D3": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "D-9",
+      "layer": "registration",
+      "group": "P17/D-9",
+      "description": "碎片词不得以独立 canonical 注册（D-9：无法确认的 DESCRIPTIVE 不注册）"
+    },
+    "E1": {
+      "classification": "unclassified",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "OBSERVATION": 3
+      },
+      "decisive_count": 0,
+      "prior_outcome_class": "observation",
+      "attribution": "P09",
+      "layer": "hygiene",
+      "group": "P09",
+      "description": "collective/generic/invalid 过滤计数（observation；趋势）"
+    },
+    "F1": {
+      "classification": "unclassified",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "OBSERVATION": 1,
+        "INCONCLUSIVE": 2
+      },
+      "decisive_count": 0,
+      "prior_outcome_class": "observation",
+      "attribution": "P11",
+      "layer": "merge",
+      "group": "merge",
+      "description": "merge stats 记录；全部 failed → INCONCLUSIVE（非 FAIL）"
+    },
+    "G1": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "D-3",
+      "layer": "db",
+      "group": "数据安全",
+      "description": "本 novel 子图 labels ⊆ {Novel, Person}（D-3 边界）"
+    },
+    "G2": {
+      "classification": "unclassified",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "OBSERVATION": 3
+      },
+      "decisive_count": 0,
+      "prior_outcome_class": "observation",
+      "attribution": "D-2 / TESTING.md §5",
+      "layer": "db",
+      "group": "数据安全",
+      "description": "persons / relationships 计数记录"
+    },
+    "G3": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "D-2 / D-3",
+      "layer": "db",
+      "group": "数据安全",
+      "description": "无跨 novel 污染（采样 novel_id 全部 == 本 run novel_id）"
+    },
+    "G4": {
+      "classification": "unclassified",
+      "satisfies_expected": null,
+      "outcome_distribution": {
+        "OBSERVATION": 3
+      },
+      "decisive_count": 0,
+      "prior_outcome_class": "observation",
+      "attribution": "P04 / P05 / P13",
+      "layer": "infra",
+      "group": "数据安全",
+      "description": "failed_blocks 记录 + 失败 chunk 覆盖检查降级（G4 规则）"
+    },
+    "G5": {
+      "classification": "stable",
+      "satisfies_expected": true,
+      "outcome_distribution": {
+        "PASS": 3
+      },
+      "decisive_count": 3,
+      "prior_outcome_class": "stable",
+      "attribution": "P19（约束 1）",
+      "layer": "checkpoint",
+      "group": "数据安全",
+      "description": "eval 运行不得产生 checkpoint 目录（P19 语义零改动守卫）"
+    }
+  },
+  "quality": {
+    "run_count": 3,
+    "stable_check_count": 14,
+    "stable_failure_count": 1,
+    "variance_check_count": 2,
+    "unclassified_check_count": 7,
+    "notes": []
+  }
+}
